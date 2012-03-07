@@ -5,7 +5,7 @@ using System.Text;
 
 namespace GitImporter
 {
-    class ElementVersion
+    public class ElementVersion
     {
         public string ElementName { get; set; }
         public ElementBranch Branch { get; set; }

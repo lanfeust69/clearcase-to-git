@@ -5,7 +5,7 @@ using System.Text;
 
 namespace GitImporter
 {
-    class ElementBranch
+    public class ElementBranch
     {
         private string _fullName;
 
