@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.IO;
@@ -14,13 +13,13 @@ namespace GitImporter
 
         private readonly DateTime _epoch = new DateTime(1970, 1, 1);
 
-        private Regex _elementNameRegex = new Regex(@"^Name \d+:(.*)");
-        private Regex _versionIdRegex = new Regex(@"^VersionId \d+:\\(.*)\\(\d+)");
-        private Regex _userRegex = new Regex(@"^EventUser \d+:(.*)");
-        private Regex _timeRegex = new Regex(@"^EventTime (\d+)");
-        private Regex _commentRegex = new Regex(@"^Comment (\d+):(.*)");
-        private Regex _labelRegex = new Regex(@"^Label \d+:(.*)");
-        private Regex _subBranchRegex = new Regex(@"^SubBranch \d+:(.*)");
+        private readonly Regex _elementNameRegex = new Regex(@"^Name \d+:(.*)");
+        private readonly Regex _versionIdRegex = new Regex(@"^VersionId \d+:\\(.*)\\(\d+)");
+        private readonly Regex _userRegex = new Regex(@"^EventUser \d+:(.*)");
+        private readonly Regex _timeRegex = new Regex(@"^EventTime (\d+)");
+        private readonly Regex _commentRegex = new Regex(@"^Comment (\d+):(.*)");
+        private readonly Regex _labelRegex = new Regex(@"^Label \d+:(.*)");
+        private readonly Regex _subBranchRegex = new Regex(@"^SubBranch \d+:(.*)");
 
         public Dictionary<string, Dictionary<string, ElementBranch>> Elements { get; private set; }
 
@@ -49,6 +48,7 @@ namespace GitImporter
                 lineNb++;
                 if (missingCommentChars > 0)
                 {
+                    Debug.Assert(currentVersion != null);
                     currentComment += line;
                     missingCommentChars -= line.Length;
                     if (missingCommentChars < 0)
@@ -151,7 +151,7 @@ namespace GitImporter
             Logger.TraceData(TraceEventType.Start | TraceEventType.Information, (int)TraceId.ReadExport, "Stop reading file", file);
         }
 
-        private string ReadLine(TextReader reader, out string eol)
+        private static string ReadLine(TextReader reader, out string eol)
         {
             int c;
             var sb = new StringBuilder();

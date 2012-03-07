@@ -1,7 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Diagnostics;
 
 namespace GitImporter
@@ -31,7 +28,7 @@ namespace GitImporter
             }
             catch (Exception ex)
             {
-                Console.WriteLine("Exception during import : " + ex.ToString());
+                Console.WriteLine("Exception during import : " + ex);
             }
             Console.ReadKey();
         }
