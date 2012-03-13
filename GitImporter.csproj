@@ -44,6 +44,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="ChangeSet.cs" />
+    <Compile Include="Cleartool.cs" />
     <Compile Include="ElementBranch.cs" />
     <Compile Include="ExportReader.cs" />
     <Compile Include="ElementVersion.cs" />

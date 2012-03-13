@@ -7,7 +7,8 @@ namespace GitImporter
     {
         ReadExport = 1,
         CreateChangeSet,
-        ApplyChangeSet
+        ApplyChangeSet,
+        Cleartool
     }
 
     class Program
@@ -20,9 +21,21 @@ namespace GitImporter
             {
                 Logger.TraceData(TraceEventType.Start | TraceEventType.Information, 0, "Start program");
 
-                var exportReader = new ExportReader();
-                foreach (var file in args)
-                    exportReader.ReadFile(file);
+                using (var cleartool = new Cleartool())
+                {
+                    Console.WriteLine("pwd : " + cleartool.Pwd());
+                    Console.WriteLine("lsvtree :");
+                    foreach (var v in cleartool.Lsvtree("fdjg"))
+                        Console.WriteLine("    " + v);
+                    Console.WriteLine("get : " + cleartool.Get("qsdf"));
+                }
+
+                if (false)
+                {
+                    var exportReader = new ExportReader();
+                    foreach (var file in args)
+                        exportReader.ReadFile(file);
+                }
 
                 Logger.TraceData(TraceEventType.Stop | TraceEventType.Information, 0, "Stop program");
             }
