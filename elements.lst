@@ -1,0 +1,8 @@
+﻿Root\README.txt
+Root\lib\mydll.dll
+Root\lib\myotherdll.dll
+Root\src\Framework\TOne.csproj
+Root\src\Framework\Scenario.cs
+Root\src\Framework\Renamed.cs
+Root\src\Version.cs
+Root\src@@\main\1\removedDir\removedFile

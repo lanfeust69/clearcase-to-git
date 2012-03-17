@@ -45,14 +45,22 @@
   <ItemGroup>
     <Compile Include="ChangeSet.cs" />
     <Compile Include="Cleartool.cs" />
+    <Compile Include="CleartoolReader.cs" />
+    <Compile Include="CommandLineArguments.cs" />
+    <Compile Include="DirectoryVersion.cs" />
     <Compile Include="ElementBranch.cs" />
     <Compile Include="ExportReader.cs" />
     <Compile Include="ElementVersion.cs" />
+    <Compile Include="ImporterArguments.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />
+    <None Include="elements.lst" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="directories.lst" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
