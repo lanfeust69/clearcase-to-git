@@ -1,0 +1,176 @@
+﻿ELEMENT_BEGIN
+Name 15:Root\README.txt
+ELEMENT_END
+VERSION_BEGIN
+VersionId 7:\main\0
+EventUser 4:jdoe
+EventTime 1330000000
+Comment 0:
+VERSION_END
+VERSION_BEGIN
+VersionId 7:\main\1
+EventUser 4:jdoe
+EventTime 1330000001
+Comment 9:Comment 1
+VERSION_END
+ELEMENT_BEGIN
+Name 18:Root\lib\mydll.dll
+VERSION_BEGIN
+VersionId 7:\main\0
+EventUser 4:jdoe
+EventTime 1330000000
+Comment 0:
+VERSION_END
+VERSION_BEGIN
+VersionId 7:\main\1
+EventUser 4:jdoe
+EventTime 1330000001
+Comment 9:Comment 1
+VERSION_END
+VERSION_BEGIN
+VersionId 7:\main\2
+EventUser 4:jdoe
+EventTime 1330086401
+Comment 9:Comment 2
+VERSION_END
+VERSION_BEGIN
+VersionId 7:\main\3
+EventUser 4:jdoe
+EventTime 1330090001
+Comment 9:Comment 3
+VERSION_END
+ELEMENT_END
+ELEMENT_BEGIN
+Name 23:Root\lib\myotherdll.dll
+VERSION_BEGIN
+VersionId 7:\main\0
+EventUser 4:jdoe
+EventTime 1330086400
+Comment 0:
+VERSION_END
+VERSION_BEGIN
+VersionId 7:\main\1
+EventUser 4:jdoe
+EventTime 1330086401
+Comment 9:Comment 1
+VERSION_END
+ELEMENT_END
+ELEMENT_BEGIN
+Name 30:Root\src\Framework\TOne.csproj
+VERSION_BEGIN
+VersionId 7:\main\0
+EventUser 4:jdoe
+EventTime 1330000000
+Comment 0:
+VERSION_END
+VERSION_BEGIN
+VersionId 7:\main\1
+EventUser 4:jdoe
+EventTime 1330000001
+Comment 9:Comment 1
+VERSION_END
+VERSION_BEGIN
+VersionId 7:\main\2
+EventUser 4:jdoe
+EventTime 1330003601
+Comment 9:Comment 1
+VERSION_END
+ELEMENT_END
+ELEMENT_BEGIN
+Name 30:Root\src\Framework\Scenario.cs
+VERSION_BEGIN
+VersionId 7:\main\0
+EventUser 4:jdoe
+EventTime 1330000000
+Comment 0:
+VERSION_END
+VERSION_BEGIN
+VersionId 7:\main\1
+EventUser 4:jdoe
+EventTime 1330000001
+Comment 9:Comment 1
+SubBranch 7:PROD1.0
+VERSION_END
+VERSION_BEGIN
+VersionId 7:\main\PROD1.0\0
+EventUser 4:jdoe
+EventTime 1330014401
+Comment 0:
+VERSION_END
+VERSION_BEGIN
+VersionId 7:\main\PROD1.0\1
+EventUser 4:jdoe
+EventTime 1330014402
+Comment 0:
+VERSION_END
+VERSION_BEGIN
+VersionId 7:\main\2
+EventUser 4:jdoe
+EventTime 1330172803
+Comment 9:Comment 1
+VERSION_END
+ELEMENT_END
+ELEMENT_BEGIN
+Name 30:Root\src\Framework\ScenarioOutput.cs
+VERSION_BEGIN
+VersionId 7:\main\0
+EventUser 4:jdoe
+EventTime 1330010800
+Comment 0:
+SubBranch 7:PROD1.0
+VERSION_END
+VERSION_BEGIN
+VersionId 7:\main\PROD1.0\0
+EventUser 4:jdoe
+EventTime 1330010801
+Comment 0:
+VERSION_END
+VERSION_BEGIN
+VersionId 7:\main\PROD1.0\1
+EventUser 4:jdoe
+EventTime 1330010802
+Comment 0:
+VERSION_END
+VERSION_BEGIN
+VersionId 7:\main\PROD1.0\2
+EventUser 4:jdoe
+EventTime 1330014402
+Comment 0:
+VERSION_END
+VERSION_BEGIN
+VersionId 7:\main\1
+EventUser 4:jdoe
+EventTime 1330172801
+Comment 9:Comment 1
+VERSION_END
+ELEMENT_END
+ELEMENT_BEGIN
+Name 29:Root\src\Framework\Renamed.cs
+VERSION_BEGIN
+VersionId 7:\main\0
+EventUser 4:jdoe
+EventTime 1330000000
+Comment 0:
+VERSION_END
+VERSION_BEGIN
+VersionId 7:\main\1
+EventUser 4:jdoe
+EventTime 1330000001
+Comment 9:Comment 1
+VERSION_END
+ELEMENT_END
+ELEMENT_BEGIN
+Name 19:Root\src\Version.cs
+VERSION_BEGIN
+VersionId 7:\main\0
+EventUser 4:jdoe
+EventTime 1330000000
+Comment 0:
+VERSION_END
+VERSION_BEGIN
+VersionId 7:\main\1
+EventUser 4:jdoe
+EventTime 1330000001
+Comment 9:Comment 1
+VERSION_END
+ELEMENT_END

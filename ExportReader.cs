@@ -1,9 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
-using System.IO;
-using System.Diagnostics;
 
 namespace GitImporter
 {
@@ -21,20 +21,20 @@ namespace GitImporter
         private readonly Regex _labelRegex = new Regex(@"^Label \d+:(.*)");
         private readonly Regex _subBranchRegex = new Regex(@"^SubBranch \d+:(.*)");
 
-        public Dictionary<string, Dictionary<string, ElementBranch>> Elements { get; private set; }
+        public Dictionary<string, Element> Elements { get; private set; }
 
         public ExportReader()
         {
-            Elements = new Dictionary<string, Dictionary<string, ElementBranch>>();
+            Elements = new Dictionary<string, Element>();
         }
         
         public void ReadFile(string file)
         {
-            Logger.TraceData(TraceEventType.Start | TraceEventType.Information, (int)TraceId.ReadExport, "Start reading file", file);
+            Logger.TraceData(TraceEventType.Start | TraceEventType.Information, (int)TraceId.ReadExport, "Start reading export file", file);
             TextReader reader = new StreamReader(file);
             string line;
-            string currentElement = null;
-            Dictionary<string, ElementBranch> currentBranches = null;
+            string currentElementName = null;
+            Element currentElement = null;
             ElementBranch currentBranch = null;
             ElementVersion currentVersion = null;
             Match match;
@@ -67,23 +67,23 @@ namespace GitImporter
                 }
                 if (line == "ELEMENT_BEGIN")
                 {
-                    currentElement = null;
+                    currentElementName = null;
                     currentBranch = null;
-                    currentBranches = null;
+                    currentElement = null;
                     currentVersion = null;
                     continue;
                 }
                 if (currentElement == null && (match = _elementNameRegex.Match(line)).Success)
                 {
-                    currentElement = match.Groups[1].Value;
-                    currentBranches = new Dictionary<string, ElementBranch>();
-                    Elements[currentElement] = currentBranches;
-                    Logger.TraceData(TraceEventType.Start | TraceEventType.Verbose, (int)TraceId.ReadExport, "start reading element", currentElement);
+                    currentElementName = match.Groups[1].Value;
+                    currentElement = new Element(currentElementName, false); // no directories in export files
+                    Elements[currentElementName] = currentElement;
+                    Logger.TraceData(TraceEventType.Start | TraceEventType.Verbose, (int)TraceId.ReadExport, "start reading element", currentElementName);
                     continue;
                 }
                 if (line == "ELEMENT_END")
                 {
-                    Logger.TraceData(TraceEventType.Stop | TraceEventType.Verbose, (int)TraceId.ReadExport, "stop reading element", currentElement);
+                    Logger.TraceData(TraceEventType.Stop | TraceEventType.Verbose, (int)TraceId.ReadExport, "stop reading element", currentElementName);
                     continue;
                 }
 
@@ -96,14 +96,14 @@ namespace GitImporter
                 {
                     string[] branchPath = match.Groups[1].Value.Split('\\');
                     string branchName = branchPath[branchPath.Length - 1];
-                    if (currentBranch == null || (currentBranch.BranchName != branchName && !currentBranches.TryGetValue(branchName, out currentBranch)))
+                    if (currentBranch == null || (currentBranch.BranchName != branchName && !currentElement.Branches.TryGetValue(branchName, out currentBranch)))
                     {
                         if (branchName != "main")
                             throw new Exception(file + ", line " + lineNb + " : Unexpected branch " + branchName);
-                        currentBranch = new ElementBranch { BranchName = branchName, ElementName = currentElement };
-                        currentBranches[branchName] = currentBranch;
+                        currentBranch = new ElementBranch(currentElement, branchName, null);
+                        currentElement.Branches[branchName] = currentBranch;
                     }
-                    currentVersion = new ElementVersion { ElementName = currentElement, Branch = currentBranch, VersionNumber = int.Parse(match.Groups[2].Value) };
+                    currentVersion = new ElementVersion(currentBranch, int.Parse(match.Groups[2].Value));
                     currentBranch.Versions.Add(currentVersion);
                     Logger.TraceData(TraceEventType.Verbose, (int)TraceId.ReadExport, "creating version", currentVersion);
                     continue;
@@ -142,13 +142,13 @@ namespace GitImporter
                 if (currentVersion != null && (match = _subBranchRegex.Match(line)).Success)
                 {
                     string branchName = match.Groups[1].Value;
-                    if (currentBranches.ContainsKey(branchName))
+                    if (currentElement.Branches.ContainsKey(branchName))
                         throw new Exception(file + ", line " + lineNb + " : Duplicated branch " + branchName);
-                    currentBranches[branchName] = new ElementBranch { ElementName = currentElement, BranchName = branchName, BranchingPoint = currentVersion };
+                    currentElement.Branches[branchName] = new ElementBranch(currentElement, branchName, currentVersion);
                     continue;
                 }
             }
-            Logger.TraceData(TraceEventType.Start | TraceEventType.Information, (int)TraceId.ReadExport, "Stop reading file", file);
+            Logger.TraceData(TraceEventType.Start | TraceEventType.Information, (int)TraceId.ReadExport, "Stop reading export file", file);
         }
 
         private static string ReadLine(TextReader reader, out string eol)

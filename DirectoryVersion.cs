@@ -5,13 +5,14 @@ using System.Text;
 
 namespace GitImporter
 {
+    [Serializable]
     public class DirectoryVersion : ElementVersion
     {
-        public List<string> Content { get; private set; }
+        public List<KeyValuePair<string, Element>> Content { get; private set; }
 
-        public DirectoryVersion()
+        public DirectoryVersion(ElementBranch branch, int versionNumber) : base(branch, versionNumber)
         {
-            Content = new List<string>();
+            Content = new List<KeyValuePair<string, Element>>();
         }
     }
 }

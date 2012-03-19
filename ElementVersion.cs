@@ -3,11 +3,12 @@ using System.Collections.Generic;
 
 namespace GitImporter
 {
+    [Serializable]
     public class ElementVersion
     {
-        public string ElementName { get; set; }
-        public ElementBranch Branch { get; set; }
-        public int VersionNumber { get; set; }
+        public Element Element { get { return Branch.Element; } }
+        public ElementBranch Branch { get; private set; }
+        public int VersionNumber { get; private set; }
         public string Author { get; set; }
         public DateTime Date { get; set; }
         public string Comment { get; set; }
@@ -17,8 +18,10 @@ namespace GitImporter
 
         public List<string> Labels { get; private set; }
 
-        public ElementVersion()
+        public ElementVersion(ElementBranch branch, int versionNumber)
         {
+            Branch = branch;
+            VersionNumber = versionNumber;
             MergesFrom = new List<ElementVersion>();
             MergesTo = new List<ElementVersion>();
             Labels = new List<string>();
@@ -26,7 +29,7 @@ namespace GitImporter
 
         public override string ToString()
         {
-            return ElementName + "@@\\" + Branch.FullName + "\\" + VersionNumber;
+            return Element.Name + "@@\\" + Branch.FullName + "\\" + VersionNumber;
         }
     }
 }

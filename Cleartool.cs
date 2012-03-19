@@ -86,7 +86,7 @@ namespace GitImporter
 
         public List<string> Lsvtree(string element)
         {
-            return ExecuteCommand("lsvtree " + element);
+            return ExecuteCommand("lsvtree -short -all " + element).Select(v => v.Substring(v.LastIndexOf("@@") + 2)).ToList();
         }
 
         /// <summary>
@@ -99,6 +99,7 @@ namespace GitImporter
             var dirs = new List<string>();
             var files = new List<string>();
             var symlinks = new List<string>();
+            // TODO : look at cleartool ls -dump
             foreach (var line in ExecuteCommand("ls -l " + element))
             {
                 Match match;
@@ -106,17 +107,30 @@ namespace GitImporter
                     dirs.Add(match.Groups[1].Value);
                 else if ((match = _fileVersionRegex.Match(line)).Success)
                     files.Add(match.Groups[1].Value);
-                if ((match = _symlinkRegex.Match(line)).Success)
+                else if ((match = _symlinkRegex.Match(line)).Success)
                     symlinks.Add(match.Groups[1].Value);
             }
             return new Tuple<List<string>, List<string>, List<string>>(dirs, files, symlinks);
         }
 
-        public string Oid(string element)
+        public string GetOid(string element)
         {
             if (!element.EndsWith("@@"))
                 element += "@@";
             return ExecuteCommand("desc -fmt %On " + element)[0];
+        }
+
+        public void GetVersionDetails(ElementVersion version)
+        {
+            // string.Join to handle multi-line comments
+            string raw = string.Join("\r\n", ExecuteCommand("desc -fmt %u§%Nd§%Nc§%Nl " + version));
+            string[] parts = raw.Split('§');
+            version.Author = parts[0];
+            version.Date = DateTime.ParseExact(parts[1], "yyyyMMdd.HHmmss", null);
+            version.Comment = parts[2];
+            foreach (string label in parts[3].Split(' '))
+                if (!string.IsNullOrWhiteSpace(label))
+                    version.Labels.Add(label);
         }
 
         public string Get(string element)

@@ -1,14 +1,16 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 
 namespace GitImporter
 {
+    [Serializable]
     public class ElementBranch
     {
         private string _fullName;
 
-        public string ElementName { get; set; }
-        public string BranchName { get; set; }
-        public ElementVersion BranchingPoint { get; set; }
+        public Element Element { get; private set; }
+        public string BranchName { get; private set; }
+        public ElementVersion BranchingPoint { get; private set; }
 
         public List<ElementVersion> Versions { get; private set; }
 
@@ -17,14 +19,17 @@ namespace GitImporter
             get { return _fullName ?? (_fullName = (BranchingPoint == null ? "" : BranchingPoint.Branch.FullName + "\\") + BranchName); }
         }
 
-        public ElementBranch()
+        public ElementBranch(Element element, string branchName, ElementVersion branchingPoint)
         {
+            Element = element;
+            BranchName = branchName;
+            BranchingPoint = branchingPoint;
             Versions = new List<ElementVersion>();
         }
 
         public override string ToString()
         {
-            return ElementName + "@@\\" + FullName;
+            return Element.Name + "@@\\" + FullName;
         }
     }
 }

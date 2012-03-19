@@ -44,23 +44,33 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="ChangeSet.cs" />
+    <Compile Include="ChangeSetBuilder.cs" />
     <Compile Include="Cleartool.cs" />
     <Compile Include="CleartoolReader.cs" />
     <Compile Include="CommandLineArguments.cs" />
     <Compile Include="DirectoryVersion.cs" />
+    <Compile Include="Element.cs" />
     <Compile Include="ElementBranch.cs" />
     <Compile Include="ExportReader.cs" />
     <Compile Include="ElementVersion.cs" />
     <Compile Include="ImporterArguments.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="VobDB.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />
-    <None Include="elements.lst" />
+    <None Include="clearcase.export">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="elements.lst">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
   <ItemGroup>
-    <None Include="directories.lst" />
+    <None Include="directories.lst">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
