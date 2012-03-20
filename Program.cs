@@ -27,7 +27,7 @@ namespace GitImporter
                 return;
             if (!importerArguments.CheckArguments())
             {
-                Console.WriteLine(CommandLine.Parser.ArgumentsUsage(typeof(ImporterArguments)));
+                Console.Error.WriteLine(CommandLine.Parser.ArgumentsUsage(typeof(ImporterArguments)));
                 return;
             }
 
@@ -75,7 +75,7 @@ namespace GitImporter
             }
             catch (Exception ex)
             {
-                Console.WriteLine("Exception during import : " + ex);
+                Console.Error.WriteLine("Exception during import : " + ex);
             }
         }
     }

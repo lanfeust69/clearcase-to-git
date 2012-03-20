@@ -27,12 +27,12 @@ namespace GitImporter
         {
             if (GenerateVobDBOnly && string.IsNullOrWhiteSpace(SaveVobDB))
             {
-                Console.WriteLine("SaveVobDB file must be specified if GenerateVobDBOnly");
+                Console.Error.WriteLine("SaveVobDB file must be specified if GenerateVobDBOnly");
                 return false;
             }
             if (!string.IsNullOrWhiteSpace(SaveVobDB) && !string.IsNullOrWhiteSpace(LoadVobDB))
             {
-                Console.WriteLine("SaveVobDB and LoadVobDB are incompatible");
+                Console.Error.WriteLine("SaveVobDB and LoadVobDB are incompatible");
                 return false;
             }
             if ((!string.IsNullOrWhiteSpace(LoadVobDB) &&
@@ -40,7 +40,7 @@ namespace GitImporter
                 (string.IsNullOrWhiteSpace(LoadVobDB) &&
                     (string.IsNullOrWhiteSpace(DirectoriesFile) || string.IsNullOrWhiteSpace(ElementsFile))))
             {
-                Console.WriteLine("Either [LoadVobDB] or [DirectoriesFile, ElementsFile and optionally ExportFiles] must be provided");
+                Console.Error.WriteLine("Either [LoadVobDB] or [DirectoriesFile, ElementsFile and optionally ExportFiles] must be provided");
                 return false;
             }
             return true;

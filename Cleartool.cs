@@ -136,7 +136,6 @@ namespace GitImporter
         public string Get(string element)
         {
             string tmp = Path.GetTempFileName();
-            Console.WriteLine("Trying to write to " + tmp);
             ExecuteCommand("get -to " + tmp + " " + element);
             return tmp;
         }

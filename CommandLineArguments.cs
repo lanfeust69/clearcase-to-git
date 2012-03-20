@@ -426,7 +426,7 @@ namespace CommandLine
             if (Parser.ParseHelp(arguments) || !Parser.ParseArguments(arguments, destination))
             {
                 // error encountered in arguments. Display usage message
-                System.Console.Write(Parser.ArgumentsUsage(destination.GetType()));
+                Console.Error.Write(Parser.ArgumentsUsage(destination.GetType()));
                 return false;
             }
             
