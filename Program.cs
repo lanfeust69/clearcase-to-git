@@ -68,7 +68,10 @@ namespace GitImporter
                 {
                     ChangeSetBuilder changeSetBuilder = new ChangeSetBuilder(vobDB);
                     changeSetBuilder.SetBranchFilters(importerArguments.Branches);
-                    changeSetBuilder.Build();
+                    var changeSets = changeSetBuilder.Build();
+
+                    using (var gitWriter = new GitWriter())
+                        gitWriter.WriteChangeSets(changeSets);
                 }
 
                 Logger.TraceData(TraceEventType.Stop | TraceEventType.Information, 0, "Stop program");

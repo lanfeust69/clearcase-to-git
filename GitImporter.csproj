@@ -53,6 +53,7 @@
     <Compile Include="ElementBranch.cs" />
     <Compile Include="ExportReader.cs" />
     <Compile Include="ElementVersion.cs" />
+    <Compile Include="GitWriter.cs" />
     <Compile Include="ImporterArguments.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

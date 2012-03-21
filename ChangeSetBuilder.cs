@@ -33,9 +33,10 @@ namespace GitImporter
                 _branchFilters = branches.Select(b => new Regex(b)).ToList();
         }
 
-        public void Build()
+        public IList<ChangeSet> Build()
         {
             var changeSets = CreateChangeSets();
+            return changeSets.Values.SelectMany(d => d.Values.SelectMany(l => l)).OrderBy(c => c, _comparer).ToList();
         }
 
         private Dictionary<string, Dictionary<string, List<ChangeSet>>> CreateChangeSets()
