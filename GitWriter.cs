@@ -11,10 +11,18 @@ namespace GitImporter
     {
         public static TraceSource Logger = Program.Logger;
 
-        private static readonly DateTime _epoch = new DateTime(1970, 1, 1);
+        private static readonly DateTime _epoch = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
         private readonly StreamWriter _writer = new StreamWriter(Console.OpenStandardOutput());
         private readonly Cleartool _cleartool = new Cleartool();
+
+        private readonly bool _doNotIncludeFileContent;
+
+        public GitWriter(string clearcaseRoot, bool doNotIncludeFileContent)
+        {
+            _doNotIncludeFileContent = doNotIncludeFileContent;
+            _cleartool.Cd(clearcaseRoot);
+        }
 
         public void WriteChangeSets(IList<ChangeSet> changeSets)
         {
@@ -61,7 +69,11 @@ namespace GitImporter
             _writer.Write("mark :" + commitNumber + "\n");
             _writer.Write("committer " + changeSet.Author + " <" + changeSet.Author + "@sgcib.com> " + (changeSet.StartTime - _epoch).TotalSeconds + " +0200\n");
             string comment = changeSet.GetComment();
-            _writer.Write("data " + comment.Length + "\n" + comment + "\n");
+            byte[] encoded = Encoding.UTF8.GetBytes(comment);
+            _writer.Write("data " + encoded.Length + "\n");
+            _writer.Flush();
+            _writer.BaseStream.Write(encoded, 0, encoded.Length);
+            _writer.Write("\n");
             if (isNewBranch && branchName != "master" && commitNumber > 1)
                 // TODO : commitNumber - 1 is not always correct (for instance if two branches start from the same master commit)
                 _writer.Write("from :" + (commitNumber - 1) + "\n");
@@ -72,14 +84,32 @@ namespace GitImporter
             {
                 if (version is DirectoryVersion)
                     continue;
+                if (!elementNames.ContainsKey(version.Element))
+                {
+                    Logger.TraceData(TraceEventType.Warning, (int)TraceId.ApplyChangeSet, "Version " + version + " was not visible in any imported directory version");
+                    continue;
+                }
+                if (_doNotIncludeFileContent)
+                {
+                    _writer.Write("M 644 inline " + elementNames[version.Element] + "\ndata <<EOF\n");
+                    _writer.Write(version + "\nEOF\n\n");
+                    continue;
+                }
                 string fileName = _cleartool.Get(version.ToString());
                 var fileInfo = new FileInfo(fileName);
+                if (!fileInfo.Exists)
+                {
+                    Logger.TraceData(TraceEventType.Warning, (int)TraceId.ApplyChangeSet, "Version " + version + " could not be read from clearcase");
+                    continue;
+                }
                 _writer.Write("M 644 inline " + elementNames[version.Element] + "\ndata " + fileInfo.Length + "\n");
                 // Flush() before using BaseStream directly
                 _writer.Flush();
-                using (var s = new FileStream(fileName, FileMode.Open))
+                using (var s = new FileStream(fileName, FileMode.Open, FileAccess.Read))
                     s.CopyTo(_writer.BaseStream);
-                File.Delete(fileName);
+                // clearcase always create as ReadOnly
+                fileInfo.IsReadOnly = false;
+                fileInfo.Delete();
                 _writer.Write("\n");
             }
         }
@@ -110,7 +140,7 @@ namespace GitImporter
                 string baseName;
                 if (!elementNames.TryGetValue(version.Element, out baseName))
                 {
-                    baseName = version.Element.Name;
+                    baseName = version.Element.Name.Replace('\\', '/');
                     elementNames.Add(version.Element, baseName);
                 }
                 baseName += "/";

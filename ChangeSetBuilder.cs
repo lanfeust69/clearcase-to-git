@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using System.Text;
 using System.Text.RegularExpressions;
 
 namespace GitImporter
@@ -11,19 +10,15 @@ namespace GitImporter
     {
         public static TraceSource Logger = Program.Logger;
 
-        private const int MAX_DELAY = 15;
+        private const int MAX_DELAY = 20;
         private static readonly ChangeSet.Comparer _comparer = new ChangeSet.Comparer();
 
-        private readonly Dictionary<string, Element> _directoryElements;
-        private readonly Dictionary<string, Element> _fileElements;
         private readonly Dictionary<string, Element> _elementsByOid;
 
         private List<Regex> _branchFilters;
 
         public ChangeSetBuilder(VobDB vobDB)
         {
-            _directoryElements = vobDB.DirectoryElements;
-            _fileElements = vobDB.FileElements;
             _elementsByOid = vobDB.ElementsByOid;
         }
 

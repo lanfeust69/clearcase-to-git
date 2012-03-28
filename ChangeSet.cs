@@ -63,7 +63,7 @@ namespace GitImporter
         public string GetComment()
         {
             return string.Join("\r\n",
-                Versions.Select(v => new { Name = v.Element.Name, Comment = v.Comment })
+                Versions.Select(v => new { v.Element.Name, v.Comment })
                     .GroupBy(e => e.Comment)
                     .Select(g => g.Count() > 3 ? g.Key : string.Join(", ", g.Select(p => p.Name)) + " : " + g.Key));
         }

@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Diagnostics;
 using System.IO;
 using System.Threading;
@@ -11,28 +10,31 @@ namespace GitImporter
 {
     public class Cleartool : IDisposable
     {
-        private const string _cleartool = "DummyCleartool.exe";
+        private const string _cleartool = "cleartool_tty.exe";
 
         public static TraceSource Logger = Program.Logger;
 
-        private Process _process;
-        private Thread _thread;
-        private ManualResetEventSlim _cleartoolAvailable = new ManualResetEventSlim();
+        private readonly Process _process;
+        private readonly Thread _outputThread;
+        private readonly Thread _errorThread;
+        private readonly ManualResetEventSlim _cleartoolAvailable = new ManualResetEventSlim();
 
-        private Regex _fileVersionRegex = new Regex("^version\\s+(\\S+)\\@\\@");
-        private Regex _directoryVersionRegex = new Regex("^directory version\\s+(\\S+)\\@\\@");
-        private Regex _symlinkRegex = new Regex("^symbolic link\\s+(\\S+ --> \\S+)\\@\\@");
+        private readonly Regex _directoryEntryRegex = new Regex("^===> name: \"([^\"]+)\"");
+        private readonly Regex _oidRegex = new Regex("cataloged oid: (\\S+) \\(mtype \\d+\\)");
+        private readonly Regex _symlinkRegex = new Regex("^.+ --> (.+)$");
 
         private List<string> _currentOutput = new List<string>();
 
         public Cleartool()
         {
             var startInfo = new ProcessStartInfo(_cleartool)
-                            { UseShellExecute = false, RedirectStandardInput = true, RedirectStandardOutput = true };
+                            { UseShellExecute = false, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true };
             _process = new Process { StartInfo = startInfo };
             _process.Start();
-            _thread = new Thread(ReadOutput) { IsBackground = true };
-            _thread.Start();
+            _outputThread = new Thread(ReadOutput) { IsBackground = true };
+            _outputThread.Start();
+            _errorThread = new Thread(ReadError) { IsBackground = true };
+            _errorThread.Start();
             _cleartoolAvailable.Wait();
         }
 
@@ -52,14 +54,24 @@ namespace GitImporter
                         break;
                     default:
                         currentString += (char)c;
-                        if (currentString == "cleartool> ")
+                        if (currentString.EndsWith("cleartool> "))
                         {
-                            _cleartoolAvailable.Set();
+                            string last = currentString.Substring(0, currentString.Length - "cleartool> ".Length);
+                            if (last.Length > 0)
+                                _currentOutput.Add(last);
                             currentString = "";
+                            _cleartoolAvailable.Set();
                         }
                         break;
                 }
             }
+        }
+
+        void ReadError()
+        {
+            string error;
+            while ((error = _process.StandardError.ReadLine()) != null)
+                Logger.TraceData(TraceEventType.Warning, (int)TraceId.Cleartool, error);
         }
 
         private List<string> ExecuteCommand(string cmd)
@@ -76,7 +88,7 @@ namespace GitImporter
 
         public void Cd(string dir)
         {
-            ExecuteCommand("cd " + dir);
+            ExecuteCommand("cd \"" + dir + "\"");
         }
 
         public string Pwd()
@@ -86,47 +98,55 @@ namespace GitImporter
 
         public List<string> Lsvtree(string element)
         {
-            return ExecuteCommand("lsvtree -short -all " + element).Select(v => v.Substring(v.LastIndexOf("@@") + 2)).ToList();
+            return ExecuteCommand("lsvtree -short -all \"" + element + "\"").Select(v => v.Substring(v.LastIndexOf("@@") + 2)).ToList();
         }
 
         /// <summary>
-        /// List content of a directory (possibly with a version-extended path)
+        /// List content of a directory (possibly with a version-extended path),
+        /// as a dictionary &lt;name as it appears in this version, oid of the element&gt;
+        /// We try to resolve symbolic links immediately, but not in a very robust way
         /// </summary>
-        /// <param name="element">the directory to list</param>
-        /// <returns>a triplet (directories, files, symlinks)</returns>
-        public Tuple<List<string>, List<string>, List<string>> Ls(string element)
+        public Dictionary<string, string> Ls(string element)
         {
-            var dirs = new List<string>();
-            var files = new List<string>();
-            var symlinks = new List<string>();
-            // TODO : look at cleartool ls -dump
-            foreach (var line in ExecuteCommand("ls -l " + element))
+            var result = new Dictionary<string, string>();
+            string name = null, oid = null;
+            foreach (var line in ExecuteCommand("ls -dump \"" + element + "\""))
             {
                 Match match;
-                if ((match = _directoryVersionRegex.Match(line)).Success)
-                    dirs.Add(match.Groups[1].Value);
-                else if ((match = _fileVersionRegex.Match(line)).Success)
-                    files.Add(match.Groups[1].Value);
+                if ((match = _directoryEntryRegex.Match(line)).Success)
+                {
+                    if (name != null && oid != null)
+                        result[name] = oid;
+                    name = match.Groups[1].Value;
+                    oid = null;
+                }
+                else if ((match = _oidRegex.Match(line)).Success)
+                    oid = match.Groups[1].Value;
                 else if ((match = _symlinkRegex.Match(line)).Success)
-                    symlinks.Add(match.Groups[1].Value);
+                {
+                    // TODO : handle symlinks
+                }
             }
-            return new Tuple<List<string>, List<string>, List<string>>(dirs, files, symlinks);
+            if (name != null && oid != null)
+                result[name] = oid;
+            return result;
         }
 
         public string GetOid(string element)
         {
             if (!element.EndsWith("@@"))
                 element += "@@";
-            return ExecuteCommand("desc -fmt %On " + element)[0];
+            var result = ExecuteCommand("desc -fmt %On \"" + element + "\"");
+            return result.Count > 0 ? result[0] : null;
         }
 
         public void GetVersionDetails(ElementVersion version)
         {
             // string.Join to handle multi-line comments
-            string raw = string.Join("\r\n", ExecuteCommand("desc -fmt %u§%Nd§%Nc§%Nl " + version));
+            string raw = string.Join("\r\n", ExecuteCommand("desc -fmt %u§%Nd§%Nc§%Nl \"" + version + "\""));
             string[] parts = raw.Split('§');
             version.Author = parts[0];
-            version.Date = DateTime.ParseExact(parts[1], "yyyyMMdd.HHmmss", null);
+            version.Date = DateTime.ParseExact(parts[1], "yyyyMMdd.HHmmss", null).ToUniversalTime();
             version.Comment = parts[2];
             foreach (string label in parts[3].Split(' '))
                 if (!string.IsNullOrWhiteSpace(label))
@@ -135,15 +155,16 @@ namespace GitImporter
 
         public string Get(string element)
         {
-            string tmp = Path.GetTempFileName();
-            ExecuteCommand("get -to " + tmp + " " + element);
+            string tmp = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+            ExecuteCommand("get -to " + tmp + " \"" + element + "\"");
             return tmp;
         }
 
         public void Dispose()
         {
             _process.StandardInput.WriteLine("quit");
-            _thread.Join();
+            _outputThread.Join();
+            _errorThread.Join();
             _process.Close();
         }
     }

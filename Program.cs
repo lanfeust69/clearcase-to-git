@@ -3,8 +3,6 @@ using System.Diagnostics;
 using System.IO;
 using System.Runtime.Serialization.Formatters.Binary;
 
-using CommandLine;
-
 namespace GitImporter
 {
     public enum TraceId
@@ -34,7 +32,7 @@ namespace GitImporter
             try
             {
                 Logger.TraceData(TraceEventType.Start | TraceEventType.Information, 0, "Start program");
-                VobDB vobDB;
+                VobDB vobDB = null;
 
                 if (!string.IsNullOrWhiteSpace(importerArguments.LoadVobDB))
                 {
@@ -43,17 +41,17 @@ namespace GitImporter
                         vobDB = (VobDB)formatter.Deserialize(stream);
                     Logger.TraceData(TraceEventType.Information, 0, "Clearcase data successfully loaded from " + importerArguments.LoadVobDB);
                 }
-                else
-                {
-                    var exportReader = new ExportReader();
-                    foreach (var file in importerArguments.ExportFiles)
-                        exportReader.ReadFile(file);
 
-                    using (var cleartoolReader = new CleartoolReader())
+                var exportReader = new ExportReader();
+                foreach (var file in importerArguments.ExportFiles)
+                    exportReader.ReadFile(file);
+
+                if (!string.IsNullOrWhiteSpace(importerArguments.DirectoriesFile) || !string.IsNullOrWhiteSpace(importerArguments.ElementsFile))
+                    using (var cleartoolReader = new CleartoolReader(importerArguments.ClearcaseRoot))
                     {
-                        cleartoolReader.Init(exportReader.Elements);
+                        cleartoolReader.Init(vobDB, exportReader.Elements);
                         cleartoolReader.Read(importerArguments.DirectoriesFile, importerArguments.ElementsFile);
-                        vobDB = new VobDB(cleartoolReader.DirectoryElements, cleartoolReader.FileElements, cleartoolReader.ElementsByOid);
+                        vobDB = cleartoolReader.VobDB;
                         if (!string.IsNullOrWhiteSpace(importerArguments.SaveVobDB))
                         {
                             var formatter = new BinaryFormatter();
@@ -62,15 +60,14 @@ namespace GitImporter
                             Logger.TraceData(TraceEventType.Information, 0, "Clearcase data successfully saved in " + importerArguments.SaveVobDB);
                         }
                     }
-                }
 
                 if (!importerArguments.GenerateVobDBOnly)
                 {
-                    ChangeSetBuilder changeSetBuilder = new ChangeSetBuilder(vobDB);
+                    var changeSetBuilder = new ChangeSetBuilder(vobDB);
                     changeSetBuilder.SetBranchFilters(importerArguments.Branches);
                     var changeSets = changeSetBuilder.Build();
 
-                    using (var gitWriter = new GitWriter())
+                    using (var gitWriter = new GitWriter(importerArguments.ClearcaseRoot, importerArguments.NoFileContent))
                         gitWriter.WriteChangeSets(changeSets);
                 }
 

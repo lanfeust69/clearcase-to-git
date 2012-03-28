@@ -11,7 +11,7 @@ namespace GitImporter
     {
         public static TraceSource Logger = Program.Logger;
 
-        private static readonly DateTime _epoch = new DateTime(1970, 1, 1);
+        private static readonly DateTime _epoch = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
         private readonly Regex _elementNameRegex = new Regex(@"^Name \d+:(.*)");
         private readonly Regex _versionIdRegex = new Regex(@"^VersionId \d+:\\(.*)\\(\d+)");
