@@ -16,6 +16,7 @@ namespace GitImporter
         private readonly Regex _elementNameRegex = new Regex(@"^Name \d+:(.*)");
         private readonly Regex _versionIdRegex = new Regex(@"^VersionId \d+:\\(.*)\\(\d+)");
         private readonly Regex _userRegex = new Regex(@"^EventUser \d+:(.*)");
+        private readonly Regex _userNameRegex = new Regex(@"^EventName \d+:(.*)");
         private readonly Regex _timeRegex = new Regex(@"^EventTime (\d+)");
         private readonly Regex _commentRegex = new Regex(@"^Comment (\d+):(.*)");
         private readonly Regex _labelRegex = new Regex(@"^Label \d+:(.*)");
@@ -110,7 +111,12 @@ namespace GitImporter
                 }
                 if (currentVersion != null && (match = _userRegex.Match(line)).Success)
                 {
-                    currentVersion.Author = match.Groups[1].Value;
+                    currentVersion.AuthorLogin = match.Groups[1].Value;
+                    continue;
+                }
+                if (currentVersion != null && (match = _userNameRegex.Match(line)).Success)
+                {
+                    currentVersion.AuthorName = match.Groups[1].Value;
                     continue;
                 }
                 if (currentVersion != null && (match = _timeRegex.Match(line)).Success)

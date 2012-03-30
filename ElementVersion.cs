@@ -9,7 +9,8 @@ namespace GitImporter
         public Element Element { get { return Branch.Element; } }
         public ElementBranch Branch { get; private set; }
         public int VersionNumber { get; private set; }
-        public string Author { get; set; }
+        public string AuthorName { get; set; }
+        public string AuthorLogin { get; set; }
         public DateTime Date { get; set; }
         public string Comment { get; set; }
 

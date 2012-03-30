@@ -19,7 +19,7 @@ namespace GitImporter
         public Dictionary<string, Element> DirectoryElements { get; private set; }
         public Dictionary<string, Element> ElementsByOid { get; private set; }
 
-        private List<Tuple<DirectoryVersion, string, string>> _fixups = new List<Tuple<DirectoryVersion,string,string>>();
+        private List<Tuple<DirectoryVersion, string, string>> _fixups = new List<Tuple<DirectoryVersion, string, string>>();
 
         public CleartoolReader(string clearcaseRoot)
         {
@@ -43,6 +43,7 @@ namespace GitImporter
                 ElementsByOid = new Dictionary<string, Element>();
             }
 
+            Logger.TraceData(TraceEventType.Start | TraceEventType.Information, (int)TraceId.ReadCleartool, "start fetching oids of exported elements");
             foreach (var element in elements)
             {
                 string oid = _cleartool.GetOid(element.Key);
@@ -56,6 +57,7 @@ namespace GitImporter
                 if (vobDB != null)
                     FileElements[element.Key] = element.Value;
             }
+            Logger.TraceData(TraceEventType.Stop | TraceEventType.Information, (int)TraceId.ReadCleartool, "stop fetching oids of exported elements");
         }
 
         public void Read(string directoriesFile, string elementsFile)

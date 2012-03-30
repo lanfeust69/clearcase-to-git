@@ -98,7 +98,7 @@ namespace GitImporter
 
         public List<string> Lsvtree(string element)
         {
-            return ExecuteCommand("lsvtree -short -all \"" + element + "\"").Select(v => v.Substring(v.LastIndexOf("@@") + 2)).ToList();
+            return ExecuteCommand("lsvtree -short -all -obsolete \"" + element + "\"").Select(v => v.Substring(v.LastIndexOf("@@") + 2)).ToList();
         }
 
         /// <summary>
@@ -143,12 +143,13 @@ namespace GitImporter
         public void GetVersionDetails(ElementVersion version)
         {
             // string.Join to handle multi-line comments
-            string raw = string.Join("\r\n", ExecuteCommand("desc -fmt %u§%Nd§%Nc§%Nl \"" + version + "\""));
+            string raw = string.Join("\r\n", ExecuteCommand("desc -fmt %Fu§%u§%Nd§%Nc§%Nl \"" + version + "\""));
             string[] parts = raw.Split('§');
-            version.Author = parts[0];
-            version.Date = DateTime.ParseExact(parts[1], "yyyyMMdd.HHmmss", null).ToUniversalTime();
-            version.Comment = parts[2];
-            foreach (string label in parts[3].Split(' '))
+            version.AuthorName = parts[0];
+            version.AuthorLogin = parts[1];
+            version.Date = DateTime.ParseExact(parts[2], "yyyyMMdd.HHmmss", null).ToUniversalTime();
+            version.Comment = parts[3];
+            foreach (string label in parts[4].Split(' '))
                 if (!string.IsNullOrWhiteSpace(label))
                     version.Labels.Add(label);
         }
