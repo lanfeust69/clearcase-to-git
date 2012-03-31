@@ -13,6 +13,8 @@ namespace GitImporter
         public string DirectoriesFile;
         [Argument(ArgumentType.AtMostOnce, HelpText = "File listing (non-directory) elements to import.")]
         public string ElementsFile;
+        [Argument(ArgumentType.MultipleUnique, HelpText = "Roots : directory elements whose parents are not imported.", DefaultValue = new[] { "." })]
+        public string[] Roots;
         [Argument(ArgumentType.MultipleUnique, HelpText = "Branches to import (may be a regular expression).", DefaultValue = new[] { "PROD\\d+\\.\\d+" })]
         public string[] Branches;
         [Argument(ArgumentType.Required, HelpText = "Full path from which element names are specified (must be within a clearcase view).")]

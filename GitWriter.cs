@@ -13,13 +13,16 @@ namespace GitImporter
         private static readonly DateTime _epoch = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
         private readonly StreamWriter _writer = new StreamWriter(Console.OpenStandardOutput());
-        private readonly Cleartool _cleartool = new Cleartool();
+        private readonly Cleartool _cleartool;
 
         private readonly bool _doNotIncludeFileContent;
 
         public GitWriter(string clearcaseRoot, bool doNotIncludeFileContent)
         {
             _doNotIncludeFileContent = doNotIncludeFileContent;
+            if (_doNotIncludeFileContent)
+                return;
+            _cleartool = new Cleartool();
             _cleartool.Cd(clearcaseRoot);
         }
 
@@ -58,8 +61,6 @@ namespace GitImporter
             if (changeSet.BranchingPoint != null)
                 _writer.Write("from :" + changeSet.BranchingPoint.Id + "\n");
 
-            // first handle Renamed : a file may be moved to a new location, then its parent directory removed
-            // TODO : this is still not enough : we must be mush more careful with renaming of directories
             foreach (var pair in changeSet.Renamed)
                 _writer.Write("R \"" + pair.Item1 + "\" \"" + pair.Item2 + "\"\n");
             foreach (var removed in changeSet.Removed)
@@ -100,7 +101,8 @@ namespace GitImporter
         public void Dispose()
         {
             _writer.Dispose();
-            _cleartool.Dispose();
+            if (_cleartool != null)
+                _cleartool.Dispose();
         }
     }
 }

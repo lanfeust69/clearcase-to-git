@@ -64,6 +64,7 @@ namespace GitImporter
                 if (!importerArguments.GenerateVobDBOnly)
                 {
                     var changeSetBuilder = new ChangeSetBuilder(vobDB);
+                    changeSetBuilder.SetRoots(importerArguments.Roots);
                     changeSetBuilder.SetBranchFilters(importerArguments.Branches);
                     var changeSets = changeSetBuilder.Build();
 

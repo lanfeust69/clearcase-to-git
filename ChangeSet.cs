@@ -17,6 +17,7 @@ namespace GitImporter
         {
             public string Name { get; set; }
             public ElementVersion Version { get; set; }
+            public bool NoComment { get; set; }
 
             public override string ToString()
             {
@@ -59,31 +60,42 @@ namespace GitImporter
             Removed = new List<string>();
         }
 
-        public void Add(ElementVersion version)
+        public NamedVersion Add(ElementVersion version)
         {
+            return Add(version, null, false);
+        }
+
+        public NamedVersion Add(ElementVersion version, string name, bool noComment)
+        {
+            NamedVersion result;
             NamedVersion existing = Versions.Find(v => v.Version.Element == version.Element);
-            if (existing != null)
+            if (!version.Element.IsDirectory && existing != null)
             {
-                // we are always on the same branch => we keep the latest version number,
+                // we are always on the same branch => we keep the latest version number for file elements,
                 // which should always be the new version due to the way we retrieve them
-                // TODO : this is not true for directory versions
+                if (existing.Name != null && name != null && existing.Name != name)
+                    throw new Exception("Incompatible names for " + version + ", " + existing.Name + " != " + name);
                 if (existing.Version.VersionNumber < version.VersionNumber)
                     existing.Version = version;
+                result = existing;
             }
             else
-                Versions.Add(new NamedVersion { Version = version });
+                Versions.Add(result = new NamedVersion { Version = version, Name = name, NoComment = noComment });
             if (version.Date < StartTime)
                 StartTime = version.Date;
             if (version.Date > FinishTime)
                 FinishTime = version.Date;
+
+            return result;
         }
 
         public string GetComment()
         {
             // TODO : better global comment
             return string.Join("\r\n",
-                Versions.Select(v => new { v.Name, v.Version.Comment })
-                    .GroupBy(e => e.Comment)
+                Versions.Where(v => !v.NoComment)
+                    .Select(v => new { v.Name, v.Version.Comment })
+                    .GroupBy(e => (e.Comment ?? "").Trim())
                     .Select(g => g.Count() > 3 ? g.Key : string.Join(", ", g.Select(p => p.Name)) + " : " + g.Key));
         }
 
