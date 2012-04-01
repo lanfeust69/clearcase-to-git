@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 
 namespace GitImporter
 {
@@ -91,12 +92,69 @@ namespace GitImporter
 
         public string GetComment()
         {
-            // TODO : better global comment
-            return string.Join("\r\n",
-                Versions.Where(v => !v.NoComment)
-                    .Select(v => new { v.Name, v.Version.Comment })
-                    .GroupBy(e => (e.Comment ?? "").Trim())
-                    .Select(g => g.Count() > 3 ? g.Key : string.Join(", ", g.Select(p => p.Name)) + " : " + g.Key));
+            var interestingFileChanges = Versions.Where(v => !v.NoComment && v.Name != null && !v.Version.Element.IsDirectory).ToList();
+            int nbFileChanges = interestingFileChanges.Count;
+            int nbDirectoryChanges = Versions.Where(v => !v.NoComment && v.Version.Element.IsDirectory).Count();
+            if (nbFileChanges == 0)
+                return nbDirectoryChanges > 0 ? nbDirectoryChanges + " director" + (nbDirectoryChanges > 1 ? "ies" : "y") + " modified" : "No actual change";
+            
+            var allComments = interestingFileChanges.Where(v => !string.IsNullOrWhiteSpace(v.Version.Comment))
+                .Select(v => new { v.Name, v.Version.Comment })
+                .GroupBy(e => (e.Comment ?? "").Trim().Replace("\r", ""))
+                .OrderByDescending(g => g.Count())
+                .ToDictionary(g => g.Key, g => g.Select(v => v.Name).ToList());
+
+            string title;
+            if (nbDirectoryChanges > 0)
+                title = string.Format("{0} file{1} and {2} director{3} modified",
+                    nbFileChanges, (nbFileChanges > 1 ? "s" : ""), nbDirectoryChanges, nbDirectoryChanges > 1 ? "ies" : "y");
+            else
+                title = string.Format("{0} file{1} modified", nbFileChanges, (nbFileChanges > 1 ? "s" : ""));
+
+            if (allComments.Count == 0)
+                return title + " : " + DisplayFileNames(interestingFileChanges.Select(v => v.Name).ToList(), false);
+
+            var mostFrequentComment = allComments.First();
+            // no multi-line comment as title
+            bool useMostFrequentCommentAsTitle = mostFrequentComment.Value.Count >= nbFileChanges / 2 + 1 && !mostFrequentComment.Key.Contains("\n");
+            if (useMostFrequentCommentAsTitle)
+                title = mostFrequentComment.Key + " (" + title + ")";
+
+            if (useMostFrequentCommentAsTitle && allComments.Count == 1)
+                return title + " : " + DisplayFileNames(interestingFileChanges.Select(v => v.Name).ToList(), false);
+
+            var sb = new StringBuilder(title);
+            sb.Append("\n");
+            foreach (var comment in allComments)
+            {
+                sb.Append("\n");
+                sb.Append(DisplayFileNames(comment.Value, true));
+                sb.Append(" :\n\t");
+                sb.Append(comment.Key.Replace("\n", "\n\t"));
+            }
+
+            return sb.ToString();
+        }
+
+        private static string DisplayFileNames(IList<string> fileNames, bool showNbNonDisplayed)
+        {
+            const int defaultNbToDisplay = 3;
+            int nbToDisplay = fileNames.Count > defaultNbToDisplay + 1 ? defaultNbToDisplay : fileNames.Count;
+            var sb = new StringBuilder();
+            for (int i = 0; i < nbToDisplay; i++)
+            {
+                if (i != 0)
+                    sb.Append(", ");
+                int pos = fileNames[i].LastIndexOf('/');
+                sb.Append(pos == -1 ? fileNames[i] : fileNames[i].Substring(pos + 1));
+            }
+            if (fileNames.Count > defaultNbToDisplay + 1)
+            {
+                sb.Append(", ...");
+                if (showNbNonDisplayed)
+                    sb.Append(" (" + (fileNames.Count - defaultNbToDisplay) + " more)");
+            }
+            return sb.ToString();
         }
 
         public override string ToString()
