@@ -76,7 +76,7 @@ namespace GitImporter
                     _writer.Write(namedVersion + "\nEOF\n\n");
                     continue;
                 }
-                string fileName = _cleartool.Get(namedVersion.ToString());
+                string fileName = _cleartool.Get(namedVersion.Version.ToString());
                 var fileInfo = new FileInfo(fileName);
                 if (!fileInfo.Exists)
                 {
