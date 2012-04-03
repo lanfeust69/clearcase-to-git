@@ -74,7 +74,7 @@ namespace GitImporter
                     }
                     if (missingCommentChars == 0)
                     {
-                        currentVersion.Comment = currentComment;
+                        currentVersion.Comment = string.Intern(currentComment);
                         currentComment = null;
                     }
                     continue;
@@ -124,12 +124,12 @@ namespace GitImporter
                 }
                 if (currentVersion != null && (match = _userRegex.Match(line)).Success)
                 {
-                    currentVersion.AuthorLogin = match.Groups[1].Value;
+                    currentVersion.AuthorLogin = string.Intern(match.Groups[1].Value);
                     continue;
                 }
                 if (currentVersion != null && (match = _userNameRegex.Match(line)).Success)
                 {
-                    currentVersion.AuthorName = match.Groups[1].Value;
+                    currentVersion.AuthorName = string.Intern(match.Groups[1].Value);
                     continue;
                 }
                 if (currentVersion != null && (match = _timeRegex.Match(line)).Success)
@@ -139,7 +139,7 @@ namespace GitImporter
                 }
                 if (currentVersion != null && (match = _labelRegex.Match(line)).Success)
                 {
-                    currentVersion.Labels.Add(match.Groups[1].Value);
+                    currentVersion.Labels.Add(string.Intern(match.Groups[1].Value));
                     continue;
                 }
                 if (currentVersion != null && (match = _commentRegex.Match(line)).Success)
@@ -153,7 +153,7 @@ namespace GitImporter
                     }
                     if (missingCommentChars == 0 && currentComment.Length > 0)
                     {
-                        currentVersion.Comment = currentComment;
+                        currentVersion.Comment = string.Intern(currentComment);
                         currentComment = null;
                     }
                     continue;

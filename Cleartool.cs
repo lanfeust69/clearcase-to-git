@@ -145,13 +145,13 @@ namespace GitImporter
             // string.Join to handle multi-line comments
             string raw = string.Join("\r\n", ExecuteCommand("desc -fmt %Fu§%u§%Nd§%Nc§%Nl \"" + version + "\""));
             string[] parts = raw.Split('§');
-            version.AuthorName = parts[0];
-            version.AuthorLogin = parts[1];
+            version.AuthorName = string.Intern(parts[0]);
+            version.AuthorLogin = string.Intern(parts[1]);
             version.Date = DateTime.ParseExact(parts[2], "yyyyMMdd.HHmmss", null).ToUniversalTime();
-            version.Comment = parts[3];
+            version.Comment = string.Intern(parts[3]);
             foreach (string label in parts[4].Split(' '))
                 if (!string.IsNullOrWhiteSpace(label))
-                    version.Labels.Add(label);
+                    version.Labels.Add(string.Intern(label));
         }
 
         public string Get(string element)
