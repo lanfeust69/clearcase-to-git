@@ -56,6 +56,15 @@ namespace GitImporter
                     using (var cleartoolReader = new CleartoolReader(importerArguments.ClearcaseRoot))
                     {
                         cleartoolReader.Init(vobDB, exportReader.Elements);
+                        // first save of exportReader with oid (if something was actually read)
+                        vobDB = cleartoolReader.VobDB;
+                        if (importerArguments.ExportFiles.Length > 0 && !string.IsNullOrWhiteSpace(importerArguments.SaveVobDB))
+                        {
+                            var formatter = new BinaryFormatter();
+                            using (var stream = new FileStream(importerArguments.SaveVobDB + ".export_oid", FileMode.Create))
+                                formatter.Serialize(stream, vobDB);
+                            Logger.TraceData(TraceEventType.Information, 0, "Clearcase export with oid successfully saved in " + importerArguments.SaveVobDB);
+                        }
                         cleartoolReader.Read(importerArguments.DirectoriesFile, importerArguments.ElementsFile);
                         vobDB = cleartoolReader.VobDB;
                         if (!string.IsNullOrWhiteSpace(importerArguments.SaveVobDB))
