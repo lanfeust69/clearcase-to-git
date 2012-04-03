@@ -7,8 +7,8 @@ namespace GitImporter
     {
         [Argument(ArgumentType.AtMostOnce, HelpText = "File in which the complete clearcase data will be saved.")]
         public string SaveVobDB;
-        [Argument(ArgumentType.AtMostOnce, HelpText = "File from which which the complete clearcase data will be loaded.")]
-        public string LoadVobDB;
+        [Argument(ArgumentType.MultipleUnique, HelpText = "Files from which which the complete clearcase data will be loaded.", DefaultValue = new string[0])]
+        public string[] LoadVobDB;
         [Argument(ArgumentType.AtMostOnce, HelpText = "File listing directories to import.")]
         public string DirectoriesFile;
         [Argument(ArgumentType.AtMostOnce, HelpText = "File listing (non-directory) elements to import.")]
@@ -23,7 +23,7 @@ namespace GitImporter
         public bool GenerateVobDBOnly;
         [Argument(ArgumentType.AtMostOnce, HelpText = "Indicates not to load file contents from clearcase.", DefaultValue = false)]
         public bool NoFileContent;
-        [DefaultArgument(ArgumentType.MultipleUnique, HelpText = "Export files generated using clearexport.")]
+        [DefaultArgument(ArgumentType.MultipleUnique, HelpText = "Export files generated using clearexport. Each file is supposed to be directly in the working directory, but there may be a prefix that means a path from the main clearcase root.")]
         public string[] ExportFiles = new string[0];
 
         public bool CheckArguments()
@@ -33,7 +33,7 @@ namespace GitImporter
                 Console.Error.WriteLine("SaveVobDB file must be specified if GenerateVobDBOnly");
                 return false;
             }
-            if (string.IsNullOrWhiteSpace(LoadVobDB) &&
+            if ((LoadVobDB == null || LoadVobDB.Length == 0) &&
                 (string.IsNullOrWhiteSpace(DirectoriesFile) || string.IsNullOrWhiteSpace(ElementsFile)))
             {
                 Console.Error.WriteLine("Either [LoadVobDB] or [DirectoriesFile, ElementsFile and optionally ExportFiles] must be provided");

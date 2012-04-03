@@ -15,8 +15,6 @@ namespace GitImporter
 
         private readonly Cleartool _cleartool = new Cleartool();
 
-        public Dictionary<string, Element> FileElements { get; private set; }
-        public Dictionary<string, Element> DirectoryElements { get; private set; }
         public Dictionary<string, Element> ElementsByOid { get; private set; }
 
         private List<Tuple<DirectoryVersion, string, string>> _fixups = new List<Tuple<DirectoryVersion, string, string>>();
@@ -26,36 +24,23 @@ namespace GitImporter
             _cleartool.Cd(clearcaseRoot);
         }
 
-        public VobDB VobDB { get { return new VobDB(DirectoryElements, FileElements, ElementsByOid); } }
+        public VobDB VobDB { get { return new VobDB(ElementsByOid); } }
 
-        internal void Init(VobDB vobDB, Dictionary<string, Element> elements)
+        internal void Init(VobDB vobDB, IEnumerable<Element> elements)
         {
-            if (vobDB != null)
-            {
-                FileElements = vobDB.FileElements;
-                DirectoryElements = vobDB.DirectoryElements;
-                ElementsByOid = vobDB.ElementsByOid;
-            }
-            else
-            {
-                FileElements = elements;
-                DirectoryElements = new Dictionary<string, Element>();
-                ElementsByOid = new Dictionary<string, Element>();
-            }
+            ElementsByOid = vobDB != null ? vobDB.ElementsByOid : new Dictionary<string, Element>();
 
             Logger.TraceData(TraceEventType.Start | TraceEventType.Information, (int)TraceId.ReadCleartool, "start fetching oids of exported elements");
             foreach (var element in elements)
             {
-                string oid = _cleartool.GetOid(element.Key);
+                string oid = _cleartool.GetOid(element.Name);
                 if (string.IsNullOrEmpty(oid))
                 {
-                    Logger.TraceData(TraceEventType.Warning, (int)TraceId.ReadCleartool, "could not find oid for element " + element.Key);
+                    Logger.TraceData(TraceEventType.Warning, (int)TraceId.ReadCleartool, "could not find oid for element " + element.Name);
                     continue;
                 }
-                element.Value.Oid = oid;
-                ElementsByOid[oid] = element.Value;
-                if (vobDB != null)
-                    FileElements[element.Key] = element.Value;
+                element.Oid = oid;
+                ElementsByOid[oid] = element;
             }
             Logger.TraceData(TraceEventType.Stop | TraceEventType.Information, (int)TraceId.ReadCleartool, "stop fetching oids of exported elements");
         }
@@ -114,10 +99,8 @@ namespace GitImporter
 
             Logger.TraceData(TraceEventType.Start | TraceEventType.Verbose, (int)TraceId.ReadCleartool,
                 "start reading " + (isDir ? "directory" : "file") + " element", elementName);
-            var element = new Element(elementName, isDir);
-            element.Oid = oid;
+            var element = new Element(elementName, isDir) { Oid = oid };
             ElementsByOid[oid] = element;
-            (isDir ? DirectoryElements : FileElements)[elementName] = element;
             foreach (string versionString in _cleartool.Lsvtree(elementName))
             {
                 // there is a first "version" for each branch, without a version number

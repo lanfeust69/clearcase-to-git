@@ -34,12 +34,18 @@ namespace GitImporter
                 Logger.TraceData(TraceEventType.Start | TraceEventType.Information, 0, "Start program");
                 VobDB vobDB = null;
 
-                if (!string.IsNullOrWhiteSpace(importerArguments.LoadVobDB))
+                if (importerArguments.LoadVobDB != null && importerArguments.LoadVobDB.Length > 0)
                 {
                     var formatter = new BinaryFormatter();
-                    using (var stream = new FileStream(importerArguments.LoadVobDB, FileMode.Open))
-                        vobDB = (VobDB)formatter.Deserialize(stream);
-                    Logger.TraceData(TraceEventType.Information, 0, "Clearcase data successfully loaded from " + importerArguments.LoadVobDB);
+                    foreach (string vobDBFile in importerArguments.LoadVobDB)
+                    {
+                        using (var stream = new FileStream(vobDBFile, FileMode.Open))
+                            if (vobDB == null)
+                                vobDB = (VobDB)formatter.Deserialize(stream);
+                            else
+                                vobDB.Add((VobDB)formatter.Deserialize(stream));
+                        Logger.TraceData(TraceEventType.Information, 0, "Clearcase data successfully loaded from " + vobDBFile);
+                    }
                 }
 
                 var exportReader = new ExportReader();

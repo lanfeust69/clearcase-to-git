@@ -22,15 +22,28 @@ namespace GitImporter
         private readonly Regex _labelRegex = new Regex(@"^Label \d+:(.*)");
         private readonly Regex _subBranchRegex = new Regex(@"^SubBranch \d+:(.*)");
 
-        public Dictionary<string, Element> Elements { get; private set; }
+        public IList<Element> Elements { get; private set; }
 
         public ExportReader()
         {
-            Elements = new Dictionary<string, Element>();
+            Elements = new List<Element>();
         }
-        
+
+        /// <summary>
+        /// Semantic of the file parameter is that the "directory" part (if present) is the path relative to the global clearcase root
+        /// the file itself should therefore be in the working directory
+        /// (although we could cheat using '/' for the root vs '\' for the actual file path)
+        /// </summary>
+        /// <param name="file"></param>
         public void ReadFile(string file)
         {
+            string root = "";
+            int pos = file.LastIndexOf('/');
+            if (pos != -1)
+            {
+                root = file.Substring(0, pos + 1).Replace('/', '\\');
+                file = file.Substring(pos + 1);
+            }
             Logger.TraceData(TraceEventType.Start | TraceEventType.Information, (int)TraceId.ReadExport, "Start reading export file", file);
             TextReader reader = new StreamReader(file);
             string line;
@@ -76,9 +89,9 @@ namespace GitImporter
                 }
                 if (currentElement == null && (match = _elementNameRegex.Match(line)).Success)
                 {
-                    currentElementName = match.Groups[1].Value;
+                    currentElementName = root + match.Groups[1].Value;
                     currentElement = new Element(currentElementName, false); // no directories in export files
-                    Elements[currentElementName] = currentElement;
+                    Elements.Add(currentElement);
                     Logger.TraceData(TraceEventType.Start | TraceEventType.Verbose, (int)TraceId.ReadExport, "start reading element", currentElementName);
                     continue;
                 }
