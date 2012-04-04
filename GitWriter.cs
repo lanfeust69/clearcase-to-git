@@ -96,6 +96,14 @@ namespace GitImporter
                 fileInfo.Delete();
                 _writer.Write("\n");
             }
+
+            foreach (var label in changeSet.Labels)
+            {
+                _writer.Write("tag " + label + "\n");
+                _writer.Write("from :" + changeSet.Id + "\n");
+                _writer.Write("tagger Unknown <unknown> " + (changeSet.StartTime - _epoch).TotalSeconds + " +0200\n");
+                _writer.Write("data 0\n\n");
+            }
         }
 
         public void Dispose()

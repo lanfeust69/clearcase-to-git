@@ -48,6 +48,8 @@ namespace GitImporter
         public int Id { get; set; }
         public ChangeSet BranchingPoint { get; set; }
 
+        public List<string> Labels { get; set; }
+
         public ChangeSet(string authorName, string authorLogin, string branch, DateTime time)
         {
             AuthorName = authorName;
@@ -59,6 +61,8 @@ namespace GitImporter
             Versions = new List<NamedVersion>();
             Renamed = new List<Tuple<string, string>>();
             Removed = new List<string>();
+
+            Labels = new List<string>();
         }
 
         public NamedVersion Add(ElementVersion version)

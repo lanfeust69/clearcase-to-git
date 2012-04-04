@@ -8,6 +8,24 @@ namespace GitImporter
 {
     public class ChangeSetBuilder
     {
+        private class LabelInfo
+        {
+            public string Name { get; private set; }
+            public List<ElementVersion> Versions { get; private set; }
+            public HashSet<ElementVersion> MissingVersions { get; private set; }
+
+            public LabelInfo(string name)
+            {
+                Name = name;
+                Versions = new List<ElementVersion>();
+            }
+
+            public void Reset()
+            {
+                MissingVersions = new HashSet<ElementVersion>(Versions.Where(v => v.VersionNumber != 0));
+            }
+        }
+
         public static TraceSource Logger = Program.Logger;
 
         private const int MAX_DELAY = 20;
@@ -28,6 +46,7 @@ namespace GitImporter
         /// For each branch, its parent branch
         /// </summary>
         private Dictionary<string, string> _globalBranches;
+        private Dictionary<string, LabelInfo> _labels = new Dictionary<string,LabelInfo>();
 
         public ChangeSetBuilder(VobDB vobDB)
         {
@@ -51,6 +70,8 @@ namespace GitImporter
         {
             var allElementBranches = CreateRawChangeSets();
             ComputeGlobalBranches(allElementBranches);
+            FilterBranches();
+            FilterLabels();
             ProcessElementNames();
             return _flattenChangeSets;
         }
@@ -67,8 +88,6 @@ namespace GitImporter
                 foreach (var branch in element.Branches.Values)
                 {
                     allElementBranches.Add(branch.FullName);
-                    if (branch.BranchName != "main" && _branchFilters != null && !_branchFilters.Any(e => e.IsMatch(branch.BranchName)))
-                        continue;
                     Dictionary<string, List<ChangeSet>> branchChangeSets;
                     if (!_changeSets.TryGetValue(branch.BranchName, out branchChangeSets))
                     {
@@ -77,6 +96,18 @@ namespace GitImporter
                     }
                     foreach (var version in branch.Versions)
                     {
+                        ElementVersion versionForLabel = version.VersionNumber == 0 && version.Branch.BranchingPoint != null
+                            ? version.Branch.BranchingPoint : version;
+                        foreach (var label in version.Labels)
+                        {
+                            LabelInfo labelInfo;
+                            if (!_labels.TryGetValue(label, out labelInfo))
+                            {
+                                labelInfo = new LabelInfo(label);
+                                _labels.Add(label, labelInfo);
+                            }
+                            labelInfo.Versions.Add(versionForLabel);
+                        }
                         if (version.VersionNumber == 0)
                             continue;
                         List<ChangeSet> authorChangeSets;
@@ -204,7 +235,6 @@ namespace GitImporter
                     throw new Exception("Could not compute parent of branch " + pair.Key + " among " + string.Join(", ", candidates));
                 _globalBranches[pair.Key] = candidates.First();
             }
-            FilterBranches();
         }
 
         private void FilterBranches()
@@ -221,12 +251,27 @@ namespace GitImporter
                     // only branches from which no non-filtered branches spawn can be removed
                     if (_globalBranches.ContainsKey(toRemove) && !_globalBranches.Values.Contains(toRemove))
                     {
+                        Logger.TraceData(TraceEventType.Information, (int)TraceId.CreateChangeSet, "Branch " + toRemove + " filtered out");
                         finished = false;
                         _globalBranches.Remove(toRemove);
                         _changeSets.Remove(toRemove);
                     }
                 }
             }
+        }
+
+        private void FilterLabels()
+        {
+            var labelsToRemove = _labels.Values
+                .Where(l => l.Versions.Exists(v => !_globalBranches.ContainsKey(v.Branch.BranchName)))
+                .Select(l => l.Name).ToList();
+            foreach (var toRemove in labelsToRemove)
+            {
+                Logger.TraceData(TraceEventType.Information, (int)TraceId.CreateChangeSet, "Label " + toRemove + " filtered : was on a filtered out branch");
+                _labels.Remove(toRemove);
+            }
+            foreach (var label in _labels.Values)
+                label.Reset();
         }
 
         private void ProcessElementNames()
@@ -283,6 +328,7 @@ namespace GitImporter
                 
                 foreach (var namedVersion in changeSet.Versions)
                 {
+                    changeSet.Labels.AddRange(ProcessLabels(namedVersion.Version, elementVersions));
                     string elementName;
                     if (!elementNames.TryGetValue(namedVersion.Version.Element, out elementName))
                     {
@@ -306,10 +352,8 @@ namespace GitImporter
             // really lost versions
             foreach (var orphanedVersions in orphanedVersionsByElement.Values)
                 foreach (var orphanedVersion in orphanedVersions)
-                {
                     Logger.TraceData(TraceEventType.Warning, (int)TraceId.CreateChangeSet,
                                      "Version " + orphanedVersion.Item2.Version + " has not been visible in any imported directory version");
-                }
         }
 
         private void ProcessDirectoryChanges(ChangeSet changeSet, Dictionary<Element, string> elementNames, Dictionary<Element, ElementVersion> elementVersions,
@@ -523,6 +567,39 @@ namespace GitImporter
                 orphanedVersions.Remove(toRemove);
             if (orphanedVersions.Count == 0)
                 orphanedVersionsByElement.Remove(element);
+        }
+
+        private IEnumerable<string> ProcessLabels(ElementVersion version, Dictionary<Element, ElementVersion> elementVersions)
+        {
+            var result = new List<string>();
+            foreach (var label in version.Labels)
+            {
+                LabelInfo labelInfo;
+                if (!_labels.TryGetValue(label, out labelInfo))
+                    continue;
+                labelInfo.MissingVersions.Remove(version);
+                if (labelInfo.MissingVersions.Count > 0)
+                    continue;
+                // so we removed the last missing version, check that everything is still OK
+                _labels.Remove(label);
+                bool ok = true;
+                foreach (var toCheck in labelInfo.Versions)
+                {
+                    if ((toCheck.VersionNumber == 0 && elementVersions.ContainsKey(toCheck.Element)) ||
+                        (toCheck.VersionNumber != 0 && elementVersions[toCheck.Element] != toCheck))
+                    {
+                        Logger.TraceData(TraceEventType.Verbose, (int)TraceId.CreateChangeSet,
+                            "Label " + label + " is inconsistent : should be on " + toCheck + ", not on " + elementVersions[toCheck.Element]);
+                        ok = false;
+                    }
+                }
+                if (!ok)
+                    Logger.TraceData(TraceEventType.Warning, (int)TraceId.CreateChangeSet,
+                        "Label " + label + " was inconsistent : not applied");
+                else
+                    result.Add(label);
+            }
+            return result;
         }
     }
 }
