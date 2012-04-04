@@ -42,6 +42,9 @@ namespace GitImporter
         {
             int c;
             string currentString = "";
+            const string prompt = "cleartool> ";
+            int promptLength = prompt.Length;
+            int currentIndexInPrompt = 0;
             while ((c = _process.StandardOutput.Read()) != -1)
             {
                 switch ((char)c)
@@ -54,14 +57,22 @@ namespace GitImporter
                         break;
                     default:
                         currentString += (char)c;
-                        if (currentString.EndsWith("cleartool> "))
+                        if (prompt[currentIndexInPrompt] == (char)c)
                         {
-                            string last = currentString.Substring(0, currentString.Length - "cleartool> ".Length);
-                            if (last.Length > 0)
-                                _currentOutput.Add(last);
-                            currentString = "";
-                            _cleartoolAvailable.Set();
+                            currentIndexInPrompt++;
+                            if (currentIndexInPrompt == promptLength)
+                            {
+                                string last = currentString.Substring(0, currentString.Length - promptLength);
+                                if (last.Length > 0)
+                                    _currentOutput.Add(last);
+                                currentString = "";
+                                currentIndexInPrompt = 0;
+                                _cleartoolAvailable.Set();
+                            }
                         }
+                        else
+                            // fortunately, there is only one 'c' in the prompt
+                            currentIndexInPrompt = (char)c == prompt[0] ? 1 : 0;
                         break;
                 }
             }
