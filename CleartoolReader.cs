@@ -31,8 +31,11 @@ namespace GitImporter
             ElementsByOid = vobDB != null ? vobDB.ElementsByOid : new Dictionary<string, Element>();
 
             Logger.TraceData(TraceEventType.Start | TraceEventType.Information, (int)TraceId.ReadCleartool, "start fetching oids of exported elements");
+            int i = 0;
             foreach (var element in elements)
             {
+                if (++i % 500 == 0)
+                    Logger.TraceData(TraceEventType.Information, (int)TraceId.ReadCleartool, "fetching oid for element " + i);
                 string oid = _cleartool.GetOid(element.Name);
                 if (string.IsNullOrEmpty(oid))
                 {
@@ -53,8 +56,13 @@ namespace GitImporter
                 using (var files = new StreamReader(elementsFile))
                 {
                     string line;
+                    int i = 0;
                     while ((line = files.ReadLine()) != null)
+                    {
+                        if (++i % 100 == 0)
+                            Logger.TraceData(TraceEventType.Information, (int)TraceId.ReadCleartool, "reading file element " + i);
                         ReadElement(line, false);
+                    }
                 }
                 Logger.TraceData(TraceEventType.Stop | TraceEventType.Information, (int)TraceId.ReadCleartool, "stop reading file elements", elementsFile);
             }
@@ -64,8 +72,13 @@ namespace GitImporter
                 using (var directories = new StreamReader(directoriesFile))
                 {
                     string line;
+                    int i = 0;
                     while ((line = directories.ReadLine()) != null)
+                    {
+                        if (++i % 20 == 0)
+                            Logger.TraceData(TraceEventType.Information, (int)TraceId.ReadCleartool, "reading directory element " + i);
                         ReadElement(line, true);
+                    }
                 }
                 Logger.TraceData(TraceEventType.Stop | TraceEventType.Information, (int)TraceId.ReadCleartool, "stop reading directory elements", directoriesFile);
             }
