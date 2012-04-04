@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Diagnostics;
 using System.IO;
-using System.Runtime.Serialization.Formatters.Binary;
+using ProtoBuf;
 
 namespace GitImporter
 {
@@ -36,14 +36,13 @@ namespace GitImporter
 
                 if (importerArguments.LoadVobDB != null && importerArguments.LoadVobDB.Length > 0)
                 {
-                    var formatter = new BinaryFormatter();
                     foreach (string vobDBFile in importerArguments.LoadVobDB)
                     {
                         using (var stream = new FileStream(vobDBFile, FileMode.Open))
                             if (vobDB == null)
-                                vobDB = (VobDB)formatter.Deserialize(stream);
+                                vobDB = Serializer.Deserialize<VobDB>(stream);
                             else
-                                vobDB.Add((VobDB)formatter.Deserialize(stream));
+                                vobDB.Add(Serializer.Deserialize<VobDB>(stream));
                         Logger.TraceData(TraceEventType.Information, 0, "Clearcase data successfully loaded from " + vobDBFile);
                     }
                 }
@@ -60,18 +59,16 @@ namespace GitImporter
                         vobDB = cleartoolReader.VobDB;
                         if (importerArguments.ExportFiles.Length > 0 && !string.IsNullOrWhiteSpace(importerArguments.SaveVobDB))
                         {
-                            var formatter = new BinaryFormatter();
                             using (var stream = new FileStream(importerArguments.SaveVobDB + ".export_oid", FileMode.Create))
-                                formatter.Serialize(stream, vobDB);
-                            Logger.TraceData(TraceEventType.Information, 0, "Clearcase export with oid successfully saved in " + importerArguments.SaveVobDB);
+                                Serializer.Serialize(stream, vobDB);
+                            Logger.TraceData(TraceEventType.Information, 0, "Clearcase export with oid successfully saved in " + importerArguments.SaveVobDB + ".export_oid");
                         }
                         cleartoolReader.Read(importerArguments.DirectoriesFile, importerArguments.ElementsFile);
                         vobDB = cleartoolReader.VobDB;
                         if (!string.IsNullOrWhiteSpace(importerArguments.SaveVobDB))
                         {
-                            var formatter = new BinaryFormatter();
                             using (var stream = new FileStream(importerArguments.SaveVobDB, FileMode.Create))
-                                formatter.Serialize(stream, vobDB);
+                                Serializer.Serialize(stream, vobDB);
                             Logger.TraceData(TraceEventType.Information, 0, "Clearcase data successfully saved in " + importerArguments.SaveVobDB);
                         }
                     }
