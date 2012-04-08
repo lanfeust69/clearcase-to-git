@@ -67,6 +67,7 @@ namespace GitImporter
             if (changeSet.BranchingPoint != null)
                 _writer.Write("from :" + changeSet.BranchingPoint.Id + "\n");
 
+            // order is significant : we must Rename and Copy files before (maybe) deleting their directory
             foreach (var pair in changeSet.Renamed)
                 _writer.Write("R \"" + pair.Item1 + "\" \"" + pair.Item2 + "\"\n");
             foreach (var pair in changeSet.Copied)
