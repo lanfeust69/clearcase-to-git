@@ -92,12 +92,12 @@ namespace GitImporter
                     currentElementName = root + match.Groups[1].Value;
                     currentElement = new Element(currentElementName, false); // no directories in export files
                     Elements.Add(currentElement);
-                    Logger.TraceData(TraceEventType.Start | TraceEventType.Verbose, (int)TraceId.ReadExport, "start reading element", currentElementName);
+                    Logger.TraceData(TraceEventType.Start | TraceEventType.Verbose, (int)TraceId.ReadExport, "Start reading element", currentElementName);
                     continue;
                 }
                 if (line == "ELEMENT_END")
                 {
-                    Logger.TraceData(TraceEventType.Stop | TraceEventType.Verbose, (int)TraceId.ReadExport, "stop reading element", currentElementName);
+                    Logger.TraceData(TraceEventType.Stop | TraceEventType.Verbose, (int)TraceId.ReadExport, "Stop reading element", currentElementName);
                     continue;
                 }
 
@@ -119,7 +119,7 @@ namespace GitImporter
                     }
                     currentVersion = new ElementVersion(currentBranch, int.Parse(match.Groups[2].Value));
                     currentBranch.Versions.Add(currentVersion);
-                    Logger.TraceData(TraceEventType.Verbose, (int)TraceId.ReadExport, "creating version", currentVersion);
+                    Logger.TraceData(TraceEventType.Verbose, (int)TraceId.ReadExport, "Creating version", currentVersion);
                     continue;
                 }
                 if (currentVersion != null && (match = _userRegex.Match(line)).Success)
@@ -183,7 +183,7 @@ namespace GitImporter
                 c = reader.Peek();
                 if (c != '\n')
                 {
-                    Logger.TraceEvent(TraceEventType.Warning, (int)TraceId.ReadExport, "Unexpected CR not followed by NL");
+                    Logger.TraceData(TraceEventType.Warning, (int)TraceId.ReadExport, "Unexpected CR not followed by NL");
                     eol = "\r";
                 }
                 else

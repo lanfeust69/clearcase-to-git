@@ -78,6 +78,7 @@ namespace GitImporter
 
         private IEnumerable<string> CreateRawChangeSets()
         {
+            Logger.TraceData(TraceEventType.Start | TraceEventType.Information, (int)TraceId.CreateChangeSet, "Start creating raw ChangeSets");
             // the list must always be kept sorted, so that BinarySearch works
             // if the size of the list gets too big and (mostly) linear insertion time becomes a problem,
             // we could look at SorteList<> (which is not actually a list, but a dictionary)
@@ -120,6 +121,7 @@ namespace GitImporter
                     }
                 }
 
+            Logger.TraceData(TraceEventType.Stop | TraceEventType.Information, (int)TraceId.CreateChangeSet, "Stop creating raw ChangeSets");
             return allElementBranches;
         }
 
@@ -276,24 +278,30 @@ namespace GitImporter
 
         private void ProcessElementNames()
         {
+            Logger.TraceData(TraceEventType.Start | TraceEventType.Information, (int)TraceId.CreateChangeSet, "Start process element names");
             _flattenChangeSets = _changeSets.Values.SelectMany(d => d.Values.SelectMany(l => l)).OrderBy(c => c, _comparer).ToList();
             int n = 0;
 
             var startedBranches = new HashSet<string>();
             var branchTips = new Dictionary<string, ChangeSet>();
-            var elementNamesByBranch = new Dictionary<string, Dictionary<Element, string>>();
+            // an element may appear under different names, especially during a move,
+            // if the destination directory has been checked in before source directory
+            var elementsNamesByBranch = new Dictionary<string, Dictionary<Element, List<string>>>();
             // branch and version for which the elementName could not be found
             var orphanedVersionsByElement = new Dictionary<Element, List<Tuple<string, ChangeSet.NamedVersion>>>();
             // some moves (rename) may be in separate ChangeSets, we must be able to know what version to write at the new location
-            var elementVersionsByBranch = new Dictionary<string, Dictionary<Element, ElementVersion>>();
+            var elementsVersionsByBranch = new Dictionary<string, Dictionary<Element, ElementVersion>>();
             foreach (var changeSet in _flattenChangeSets)
             {
                 n++;
                 changeSet.Id = n;
-                branchTips[changeSet.Branch] = changeSet;
+                Logger.TraceData(TraceEventType.Start | TraceEventType.Verbose, (int)TraceId.CreateChangeSet, "Start process element names in ChangeSet", changeSet);
+                if (n % 1000 == 0)
+                    Logger.TraceData(TraceEventType.Information, (int)TraceId.CreateChangeSet, "Processing element names in ChangeSet", changeSet);
 
-                Dictionary<Element, string> elementNames;
-                Dictionary<Element, ElementVersion> elementVersions;
+                branchTips[changeSet.Branch] = changeSet;
+                Dictionary<Element, List<string>> elementsNames;
+                Dictionary<Element, ElementVersion> elementsVersions;
                 bool isNewBranch = !startedBranches.Contains(changeSet.Branch);
                 if (isNewBranch)
                 {
@@ -302,38 +310,38 @@ namespace GitImporter
                     {
                         string parentBranch = _globalBranches[changeSet.Branch];
                         changeSet.BranchingPoint = branchTips[parentBranch];
-                        elementNames = new Dictionary<Element, string>(elementNamesByBranch[parentBranch]);
-                        elementVersions = new Dictionary<Element, ElementVersion>(elementVersionsByBranch[parentBranch]);
+                        elementsNames = new Dictionary<Element, List<string>>(elementsNamesByBranch[parentBranch]);
+                        elementsVersions = new Dictionary<Element, ElementVersion>(elementsVersionsByBranch[parentBranch]);
                     }
                     else
                     {
-                        elementNames = new Dictionary<Element, string>();
-                        elementVersions = new Dictionary<Element, ElementVersion>();
+                        elementsNames = new Dictionary<Element, List<string>>();
+                        elementsVersions = new Dictionary<Element, ElementVersion>();
                     }
-                    elementNamesByBranch.Add(changeSet.Branch, elementNames);
-                    elementVersionsByBranch.Add(changeSet.Branch, elementVersions);
+                    elementsNamesByBranch.Add(changeSet.Branch, elementsNames);
+                    elementsVersionsByBranch.Add(changeSet.Branch, elementsVersions);
                     startedBranches.Add(changeSet.Branch);
                 }
                 else
                 {
-                    elementNames = elementNamesByBranch[changeSet.Branch];
-                    elementVersions = elementVersionsByBranch[changeSet.Branch];
+                    elementsNames = elementsNamesByBranch[changeSet.Branch];
+                    elementsVersions = elementsVersionsByBranch[changeSet.Branch];
                 }
 
                 // first update current version of changed elements
                 foreach (var namedVersion in changeSet.Versions)
-                    elementVersions[namedVersion.Version.Element] = namedVersion.Version;
+                    elementsVersions[namedVersion.Version.Element] = namedVersion.Version;
                 
-                ProcessDirectoryChanges(changeSet, elementNames, elementVersions, orphanedVersionsByElement);
+                ProcessDirectoryChanges(changeSet, elementsNames, elementsVersions, orphanedVersionsByElement);
                 
                 foreach (var namedVersion in changeSet.Versions)
                 {
-                    changeSet.Labels.AddRange(ProcessLabels(namedVersion.Version, elementVersions));
-                    string elementName;
-                    if (!elementNames.TryGetValue(namedVersion.Version.Element, out elementName))
+                    changeSet.Labels.AddRange(ProcessLabels(namedVersion.Version, elementsVersions));
+                    List<string> elementNames;
+                    if (!elementsNames.TryGetValue(namedVersion.Version.Element, out elementNames))
                     {
-                        if (namedVersion.Name != null)
-                            throw new Exception("Version " + namedVersion.Version + " was named " + namedVersion.Name + ", but had no entry in elementNames");
+                        if (namedVersion.Names.Count > 0)
+                            throw new Exception("Version " + namedVersion.Version + " was named " + namedVersion.Names[0] + ", but had no entry in elementNames");
 
                         Logger.TraceData(TraceEventType.Verbose, (int)TraceId.CreateChangeSet,
                                          "Version " + namedVersion.Version + " was not yet visible in an existing directory version");
@@ -346,17 +354,22 @@ namespace GitImporter
                         orphanedVersions.Add(new Tuple<string, ChangeSet.NamedVersion>(changeSet.Branch, namedVersion));
                         continue;
                     }
-                    namedVersion.Name = elementName;
+                    namedVersion.Names.AddRange(elementNames);
                 }
+                Logger.TraceData(TraceEventType.Start | TraceEventType.Verbose, (int)TraceId.CreateChangeSet, "Stop process element names in ChangeSet", changeSet.Id);
             }
+            
             // really lost versions
             foreach (var orphanedVersions in orphanedVersionsByElement.Values)
                 foreach (var orphanedVersion in orphanedVersions)
                     Logger.TraceData(TraceEventType.Warning, (int)TraceId.CreateChangeSet,
                                      "Version " + orphanedVersion.Item2.Version + " has not been visible in any imported directory version");
+
+            Logger.TraceData(TraceEventType.Stop | TraceEventType.Information, (int)TraceId.CreateChangeSet, "Stop process element names");
         }
 
-        private void ProcessDirectoryChanges(ChangeSet changeSet, Dictionary<Element, string> elementNames, Dictionary<Element, ElementVersion> elementVersions,
+        private void ProcessDirectoryChanges(ChangeSet changeSet,
+            Dictionary<Element, List<string>> elementsNames, Dictionary<Element, ElementVersion> elementsVersions,
             Dictionary<Element, List<Tuple<string, ChangeSet.NamedVersion>>> orphanedVersionsByElement)
         {
             // first order from roots to leaves (because changes to roots also impact leaves)
@@ -381,56 +394,66 @@ namespace GitImporter
                 if (version.VersionNumber == 0)
                     continue;
 
-                string baseName;
-                if (!elementNames.TryGetValue(version.Element, out baseName) && _roots.Contains(version.Element.Name))
+                List<string> baseNames;
+                if (!elementsNames.TryGetValue(version.Element, out baseNames))
                 {
-                    baseName = version.Element.Name.Replace('\\', '/');
-                    elementNames.Add(version.Element, baseName);
+                    if (_roots.Contains(version.Element.Name))
+                    {
+                        baseNames = new List<string> { version.Element.Name.Replace('\\', '/') };
+                        elementsNames.Add(version.Element, baseNames);
+                    }
+                    else
+                        baseNames = new List<string> { null };
                 }
-                if (baseName != null)
-                    baseName += "/";
-                ComputeDiffWithPrevious(version, baseName, removedElements, addedElements);
+
+                foreach (string baseName in baseNames)
+                    ComputeDiffWithPrevious(version, baseName == null ? null : baseName + "/", removedElements, addedElements);
             }
 
-            ProcessRemove(changeSet, elementNames, removedElements, addedElements);
+            ProcessRemove(changeSet, elementsNames, elementsVersions, removedElements, addedElements);
 
             // then update elementNames so that later changes of the elements will be at correct location
             foreach (var version in orderedVersions)
             {
-                string elementName;
-                if (!elementNames.TryGetValue(version.Element, out elementName))
+                List<string> elementNames;
+                if (!elementsNames.TryGetValue(version.Element, out elementNames))
                     // removed by one of the changes
                     continue;
-                string baseName = elementName + "/";
-                UpdateChildNames(version, baseName, elementNames, elementVersions);
+                foreach (string baseName in elementNames)
+                    UpdateChildNames(version, baseName + "/", elementsNames, elementsVersions);
             }
 
-            ProcessRename(changeSet, elementNames, removedElements, addedElements);
+            ProcessRename(changeSet, elementsNames, elementsVersions, removedElements, addedElements);
 
             // now remaining added elements
             foreach (var pair in addedElements)
             {
-                string baseName;
-                if (elementNames.TryGetValue(pair.Value.Item1, out baseName))
-                    baseName += "/";
-                AddElement(changeSet, pair.Key, baseName, pair.Value.Item2, elementNames, elementVersions, orphanedVersionsByElement);
+                List<string> baseNames;
+                if (elementsNames.TryGetValue(pair.Value.Item1, out baseNames))
+                    baseNames = baseNames.Select(s => s + "/").ToList();
+                else
+                    baseNames = new List<string> { null };
+                foreach (string baseName in baseNames)
+                    AddElement(changeSet, pair.Key, baseName, pair.Value.Item2, elementsVersions, orphanedVersionsByElement);
             }
         }
 
         private static void UpdateChildNames(DirectoryVersion version, string baseName,
-            Dictionary<Element, string> elementNames, Dictionary<Element, ElementVersion> elementVersions)
+            Dictionary<Element, List<string>> elementsNames, Dictionary<Element, ElementVersion> elementsVersions)
         {
             ElementVersion childVersion;
             foreach (var child in version.Content)
             {
-                elementNames[child.Value] = baseName + child.Key;
-                if (child.Value.IsDirectory && elementVersions.TryGetValue(child.Value, out childVersion))
-                    UpdateChildNames((DirectoryVersion)childVersion, baseName + child.Key + "/", elementNames, elementVersions);
+                // TODO this is where it hurts...
+                elementsNames[child.Value] = new List<string> { baseName + child.Key };
+                if (child.Value.IsDirectory && elementsVersions.TryGetValue(child.Value, out childVersion))
+                    UpdateChildNames((DirectoryVersion)childVersion, baseName + child.Key + "/", elementsNames, elementsVersions);
             }
         }
 
         private static void ComputeDiffWithPrevious(DirectoryVersion version, string baseName, Dictionary<Element, string> removedElements, Dictionary<Element, Tuple<Element, string>> addedElements)
         {
+            // we never put (uninteresting) version 0 in a changeSet, but it is still in the ElementBranch.Versions
             var previousVersion = (DirectoryVersion)version.Branch.Versions[version.Branch.Versions.IndexOf(version) - 1];
             foreach (var pair in previousVersion.Content)
             {
@@ -449,11 +472,13 @@ namespace GitImporter
             foreach (var pair in version.Content)
             {
                 if (!previousVersion.Content.Exists(p => p.Value == pair.Value))
-                    addedElements.Add(pair.Value, new Tuple<Element, string>(version.Element, pair.Key));
+                    // same here : last Add() wins
+                    addedElements[pair.Value] = new Tuple<Element, string>(version.Element, pair.Key);
             }
         }
 
-        private static void ProcessRemove(ChangeSet changeSet, Dictionary<Element, string> elementNames,
+        private static void ProcessRemove(ChangeSet changeSet,
+            Dictionary<Element, List<string>> elementsNames, Dictionary<Element, ElementVersion> elementsVersions,
             Dictionary<Element, string> removedElements, Dictionary<Element, Tuple<Element, string>> addedElements)
         {
             // handles remove (directory rename may impact other changes)
@@ -469,17 +494,46 @@ namespace GitImporter
                             removedWithParent = true;
                             break;
                         }
-                    if (!removedWithParent)
+                    // git doesn't handle empty directories...
+                    if (!removedWithParent && !WasEmptyDirectory(pair.Key, elementsVersions, changeSet))
                         changeSet.Removed.Add(pair.Value);
                     removedElements.Remove(pair.Key);
                     // not available anymore
-                    elementNames.Remove(pair.Key);
-                    // TODO : should we remove child elementNames ? probably.
+                    List<string> elementNames;
+                    if (elementsNames.TryGetValue(pair.Key, out elementNames))
+                    {
+                        elementNames.Remove(pair.Value);
+                        if (elementNames.Count == 0)
+                            elementsNames.Remove(pair.Key);
+                        // TODO : should we remove child elementNames ? probably.
+                    }
                 }
             }
         }
 
-        private static void ProcessRename(ChangeSet changeSet, Dictionary<Element, string> elementNames,
+        private static bool WasEmptyDirectory(Element element, Dictionary<Element, ElementVersion> elementsVersions, ChangeSet changeSet)
+        {
+            if (!element.IsDirectory)
+                return false;
+            // if there has been additions in this changeSet, we look at the version before
+            DirectoryVersion version = changeSet.Versions.OfType<DirectoryVersion>().FirstOrDefault(v => v.Element == element);
+            if (version != null)
+                // we never put (uninteresting) version 0 in a changeSet, but it is still in the ElementBranch.Versions
+                version = (DirectoryVersion)version.Branch.Versions[version.Branch.Versions.IndexOf(version) - 1];
+            if (version == null)
+            {
+                ElementVersion v;
+                if (!elementsVersions.TryGetValue(element, out v))
+                    // we never saw a (non-0) version : empty
+                    return true;
+                version = (DirectoryVersion)v;
+            }
+
+            return version.Content.All(v => WasEmptyDirectory(v.Value, elementsVersions, changeSet));
+        }
+
+        private static void ProcessRename(ChangeSet changeSet,
+            Dictionary<Element, List<string>> elementsNames, Dictionary<Element, ElementVersion> elementsVersions,
             Dictionary<Element, string> removedElements, Dictionary<Element, Tuple<Element, string>> addedElements)
         {
             // now elementNames have target names
@@ -495,10 +549,16 @@ namespace GitImporter
                         oldName = oldName.Replace(rename.Item1 + "/", rename.Item2 + "/");
                 }
                 var newName = addedElements[pair.Key];
-                string elementName;
-                if (elementNames.TryGetValue(newName.Item1, out elementName))
+                List<string> elementNames;
+                if (elementsNames.TryGetValue(newName.Item1, out elementNames))
                 {
-                    changeSet.Renamed.Add(new Tuple<string, string>(oldName, elementName + "/" + newName.Item2));
+                    string renamedTo = elementNames[0] + "/" + newName.Item2;
+                    if (!WasEmptyDirectory(pair.Key, elementsVersions, changeSet))
+                    {
+                        changeSet.Renamed.Add(new Tuple<string, string>(oldName, renamedTo));
+                        foreach (string name in elementNames.Skip(1))
+                            changeSet.Copied.Add(new Tuple<string, string>(renamedTo, name + "/" + newName.Item2));
+                    }
                     addedElements.Remove(pair.Key);
                 }
                 // else destination not visible yet : another (hopefully temporary) orphan
@@ -506,18 +566,18 @@ namespace GitImporter
         }
 
         private static void AddElement(ChangeSet changeSet, Element element, string baseName, string name,
-            Dictionary<Element, string> elementNames, Dictionary<Element, ElementVersion> elementVersions,
+            Dictionary<Element, ElementVersion> elementsVersions,
             Dictionary<Element, List<Tuple<string, ChangeSet.NamedVersion>>> orphanedVersionsByElement)
         {
             ElementVersion currentVersion;
-            if (!elementVersions.TryGetValue(element, out currentVersion))
+            if (!elementsVersions.TryGetValue(element, out currentVersion))
                 // assumed to be (empty) version 0
                 return;
 
             if (element.IsDirectory)
             {
                 foreach (var subElement in ((DirectoryVersion)currentVersion).Content)
-                    AddElement(changeSet, subElement.Value, baseName == null ? null : baseName + name + "/", subElement.Key, elementNames, elementVersions, orphanedVersionsByElement);
+                    AddElement(changeSet, subElement.Value, baseName == null ? null : baseName + name + "/", subElement.Key, elementsVersions, orphanedVersionsByElement);
                 return;
             }
             List<ChangeSet.NamedVersion> existing = changeSet.Versions.Where(v => v.Version.Element == element).ToList();
@@ -530,17 +590,24 @@ namespace GitImporter
             {
                 if (existing[0].Version != currentVersion)
                     throw new Exception("Unexpected mismatch of versions of file element " + element + " in change set " + changeSet + " : " + existing[0].Version + " != " + currentVersion);
-                if (existing[0].Name != null && fullName != null && existing[0].Name != fullName)
-                    // TODO : maybe this could be normal with links... but not compatible with elementNames as it is
-                    throw new Exception("Unexpected mismatch of names of file element " + element + " in change set " + changeSet + " : " + existing[0].Name + " != " + fullName);
-                existing[0].Name = fullName;
+                if (fullName != null && !existing[0].Names.Contains(fullName))
+                {
+                    existing[0].Names.Add(fullName);
+                    if (existing[0].Names.Count > 1)
+                        Logger.TraceData(TraceEventType.Information, (int)TraceId.CreateChangeSet,
+                            "Version " + existing[0].Version + " has several names : " + string.Join(", ", existing[0].Names));
+                }
             }
             else
-                addedNamedVersion = changeSet.Add(currentVersion, fullName, true);
+                addedNamedVersion = changeSet.Add(currentVersion, fullName, false);
+
+            if (addedNamedVersion == null && fullName == null)
+                // nothing that interesting happened...
+                return;
 
             List<Tuple<string, ChangeSet.NamedVersion>> orphanedVersions;
             if ((!orphanedVersionsByElement.TryGetValue(element, out orphanedVersions) || orphanedVersions.Count == 0) && (addedNamedVersion == null || fullName != null))
-                // nothing to patch, and no new orphan : done
+                // no orphan to patch, and no new orphan : done
                 return;
 
             if (addedNamedVersion != null && fullName == null)
@@ -555,12 +622,14 @@ namespace GitImporter
                 return;
             }
 
+            if (fullName == null)
+                return;
             // we've got a name here, maybe we can patch some orphans
             var completed = new List<Tuple<string, ChangeSet.NamedVersion>>();
             foreach (var namedVersion in orphanedVersions)
                 if (namedVersion.Item1 == changeSet.Branch && namedVersion.Item2.Version == currentVersion)
                 {
-                    namedVersion.Item2.Name = fullName;
+                    namedVersion.Item2.Names.Add(fullName);
                     completed.Add(namedVersion);
                 }
             foreach (var toRemove in completed)
@@ -569,7 +638,7 @@ namespace GitImporter
                 orphanedVersionsByElement.Remove(element);
         }
 
-        private IEnumerable<string> ProcessLabels(ElementVersion version, Dictionary<Element, ElementVersion> elementVersions)
+        private IEnumerable<string> ProcessLabels(ElementVersion version, Dictionary<Element, ElementVersion> elementsVersions)
         {
             var result = new List<string>();
             foreach (var label in version.Labels)
@@ -585,11 +654,11 @@ namespace GitImporter
                 bool ok = true;
                 foreach (var toCheck in labelInfo.Versions)
                 {
-                    if ((toCheck.VersionNumber == 0 && elementVersions.ContainsKey(toCheck.Element)) ||
-                        (toCheck.VersionNumber != 0 && elementVersions[toCheck.Element] != toCheck))
+                    if ((toCheck.VersionNumber == 0 && elementsVersions.ContainsKey(toCheck.Element)) ||
+                        (toCheck.VersionNumber != 0 && elementsVersions[toCheck.Element] != toCheck))
                     {
                         Logger.TraceData(TraceEventType.Verbose, (int)TraceId.CreateChangeSet,
-                            "Label " + label + " is inconsistent : should be on " + toCheck + ", not on " + elementVersions[toCheck.Element]);
+                            "Label " + label + " is inconsistent : should be on " + toCheck + ", not on " + elementsVersions[toCheck.Element]);
                         ok = false;
                     }
                 }

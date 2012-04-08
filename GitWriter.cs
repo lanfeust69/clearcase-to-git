@@ -32,10 +32,16 @@ namespace GitImporter
             int n = 0;
             Logger.TraceData(TraceEventType.Start | TraceEventType.Information, (int)TraceId.ApplyChangeSet, "Start writing " + total + " change sets");
 
+            // how frequently to report progress
+            int frequency;
+            var queue = new Queue<int>(new[] { 1, 2, 5 });
+            while (total / (frequency = queue.Dequeue()) > 1000)
+                queue.Enqueue(frequency * 10);
+
             foreach (var changeSet in changeSets)
             {
                 n++;
-                if (total < 100 || n % (total / 100) == 0)
+                if (n % frequency == 0)
                     _writer.Write("progress Writing change set " + n + " of " + total + "\n\n");
 
                 Logger.TraceData(TraceEventType.Start | TraceEventType.Verbose, (int)TraceId.ApplyChangeSet, "Start writing change set", n);
@@ -63,34 +69,47 @@ namespace GitImporter
 
             foreach (var pair in changeSet.Renamed)
                 _writer.Write("R \"" + pair.Item1 + "\" \"" + pair.Item2 + "\"\n");
+            foreach (var pair in changeSet.Copied)
+                _writer.Write("C \"" + pair.Item1 + "\" \"" + pair.Item2 + "\"\n");
             foreach (var removed in changeSet.Removed)
                 _writer.Write("D " + removed + "\n");
 
             foreach (var namedVersion in changeSet.Versions)
             {
-                if (namedVersion.Version is DirectoryVersion || string.IsNullOrWhiteSpace(namedVersion.Name))
+                if (namedVersion.Version is DirectoryVersion)
                     continue;
+
                 if (_doNotIncludeFileContent)
                 {
-                    _writer.Write("M 644 inline " + namedVersion.Name + "\ndata <<EOF\n");
-                    _writer.Write(namedVersion + "\nEOF\n\n");
+                    foreach (string name in namedVersion.Names)
+                    {
+                        _writer.Write("M 644 inline " + name + "\ndata <<EOF\n");
+                        _writer.Write(namedVersion + "\nEOF\n\n");
+                    }
                     continue;
                 }
+                
                 string fileName = _cleartool.Get(namedVersion.Version.ToString());
                 var fileInfo = new FileInfo(fileName);
                 if (!fileInfo.Exists)
                 {
                     Logger.TraceData(TraceEventType.Warning, (int)TraceId.ApplyChangeSet, "Version " + namedVersion + " could not be read from clearcase");
                     // still create a file for later delete or rename
-                    _writer.Write("M 644 inline " + namedVersion.Name + "\ndata <<EOF\n");
-                    _writer.Write("// clearcase error while retrieving " + namedVersion + "\nEOF\n\n");
+                    foreach (string name in namedVersion.Names)
+                    {
+                        _writer.Write("M 644 inline " + name + "\ndata <<EOF\n");
+                        _writer.Write("// clearcase error while retrieving " + namedVersion + "\nEOF\n\n");
+                    }
                     continue;
                 }
-                _writer.Write("M 644 inline " + namedVersion.Name + "\ndata " + fileInfo.Length + "\n");
-                // Flush() before using BaseStream directly
-                _writer.Flush();
-                using (var s = new FileStream(fileName, FileMode.Open, FileAccess.Read))
-                    s.CopyTo(_writer.BaseStream);
+                foreach (string name in namedVersion.Names)
+                {
+                    _writer.Write("M 644 inline " + name + "\ndata " + fileInfo.Length + "\n");
+                    // Flush() before using BaseStream directly
+                    _writer.Flush();
+                    using (var s = new FileStream(fileName, FileMode.Open, FileAccess.Read))
+                        s.CopyTo(_writer.BaseStream);
+                }
                 // clearcase always create as ReadOnly
                 fileInfo.IsReadOnly = false;
                 fileInfo.Delete();

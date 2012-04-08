@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Diagnostics;
 
 namespace GitImporter
 {
@@ -10,19 +11,31 @@ namespace GitImporter
     /// Author
     /// Branch
     /// Close C/I time
-    /// TODO : check labels ?
     /// </summary>
     public class ChangeSet
     {
         public class NamedVersion
         {
-            public string Name { get; set; }
+            public List<string> Names { get; private set; }
             public ElementVersion Version { get; set; }
-            public bool NoComment { get; set; }
+            public bool InRawChangeSet { get; set; }
+
+            public NamedVersion()
+            {
+                Names = new List<string>();
+            }
+
+            public NamedVersion(ElementVersion version, string name, bool inRawChangeSet) : this()
+            {
+                Version = version;
+                InRawChangeSet = inRawChangeSet;
+                if (name != null)
+                    Names.Add(name);
+            }
 
             public override string ToString()
             {
-                return Version + " as " + (Name ?? "<Unknown>");
+                return Version + " as " + (Names.Count == 0 ? "<Unknown>" : string.Join(", ", Names));
             }
         }
 
@@ -34,6 +47,8 @@ namespace GitImporter
             }
         }
 
+        public static TraceSource Logger = Program.Logger;
+
         public string AuthorName { get; private set; }
         public string AuthorLogin { get; private set; }
         public string Branch { get; private set; }
@@ -44,6 +59,7 @@ namespace GitImporter
         public List<NamedVersion> Versions { get; private set; }
         public List<Tuple<string, string>> Renamed { get; private set; }
         public List<string> Removed { get; private set; }
+        public List<Tuple<string, string>> Copied { get; private set; }
 
         public int Id { get; set; }
         public ChangeSet BranchingPoint { get; set; }
@@ -61,16 +77,17 @@ namespace GitImporter
             Versions = new List<NamedVersion>();
             Renamed = new List<Tuple<string, string>>();
             Removed = new List<string>();
+            Copied = new List<Tuple<string, string>>();
 
             Labels = new List<string>();
         }
 
         public NamedVersion Add(ElementVersion version)
         {
-            return Add(version, null, false);
+            return Add(version, null, true);
         }
 
-        public NamedVersion Add(ElementVersion version, string name, bool noComment)
+        public NamedVersion Add(ElementVersion version, string name, bool inRawChangeSet)
         {
             NamedVersion result;
             NamedVersion existing = Versions.Find(v => v.Version.Element == version.Element);
@@ -78,32 +95,39 @@ namespace GitImporter
             {
                 // we are always on the same branch => we keep the latest version number for file elements,
                 // which should always be the new version due to the way we retrieve them
-                if (existing.Name != null && name != null && existing.Name != name)
-                    throw new Exception("Incompatible names for " + version + ", " + existing.Name + " != " + name);
+                if (existing.Names.Count > 0 && name != null && !existing.Names.Contains(name))
+                {
+                    existing.Names.Add(name);
+                    Logger.TraceData(TraceEventType.Information, (int)TraceId.CreateChangeSet,
+                        "Version " + version + " has several names : " + string.Join(", ", existing.Names));
+                }
                 if (existing.Version.VersionNumber < version.VersionNumber)
                     existing.Version = version;
                 result = existing;
             }
             else
-                Versions.Add(result = new NamedVersion { Version = version, Name = name, NoComment = noComment });
-            if (version.Date < StartTime)
-                StartTime = version.Date;
-            if (version.Date > FinishTime)
-                FinishTime = version.Date;
+                Versions.Add(result = new NamedVersion(version, name, inRawChangeSet));
+            if (inRawChangeSet)
+            {
+                if (version.Date < StartTime)
+                    StartTime = version.Date;
+                if (version.Date > FinishTime)
+                    FinishTime = version.Date;
+            }
 
             return result;
         }
 
         public string GetComment()
         {
-            var interestingFileChanges = Versions.Where(v => !v.NoComment && v.Name != null && !v.Version.Element.IsDirectory).ToList();
+            var interestingFileChanges = Versions.Where(v => v.InRawChangeSet && v.Names.Count > 0 && !v.Version.Element.IsDirectory).ToList();
             int nbFileChanges = interestingFileChanges.Count;
-            int nbDirectoryChanges = Versions.Where(v => !v.NoComment && v.Version.Element.IsDirectory).Count();
+            int nbDirectoryChanges = Versions.Where(v => v.InRawChangeSet && v.Version.Element.IsDirectory).Count();
             if (nbFileChanges == 0)
                 return nbDirectoryChanges > 0 ? nbDirectoryChanges + " director" + (nbDirectoryChanges > 1 ? "ies" : "y") + " modified" : "No actual change";
             
             var allComments = interestingFileChanges.Where(v => !string.IsNullOrWhiteSpace(v.Version.Comment))
-                .Select(v => new { v.Name, v.Version.Comment })
+                .Select(v => new { Name = v.Names[0], v.Version.Comment })
                 .GroupBy(e => (e.Comment ?? "").Trim().Replace("\r", ""))
                 .OrderByDescending(g => g.Count())
                 .ToDictionary(g => g.Key, g => g.Select(v => v.Name).ToList());
@@ -116,7 +140,7 @@ namespace GitImporter
                 title = string.Format("{0} file{1} modified", nbFileChanges, (nbFileChanges > 1 ? "s" : ""));
 
             if (allComments.Count == 0)
-                return title + " : " + DisplayFileNames(interestingFileChanges.Select(v => v.Name).ToList(), false);
+                return title + " : " + DisplayFileNames(interestingFileChanges.Select(v => v.Names[0]).ToList(), false);
 
             var mostFrequentComment = allComments.First();
             // no multi-line comment as title
@@ -125,7 +149,7 @@ namespace GitImporter
                 title = mostFrequentComment.Key + " (" + title + ")";
 
             if (useMostFrequentCommentAsTitle && allComments.Count == 1)
-                return title + " : " + DisplayFileNames(interestingFileChanges.Select(v => v.Name).ToList(), false);
+                return title + " : " + DisplayFileNames(interestingFileChanges.Select(v => v.Names[0]).ToList(), false);
 
             var sb = new StringBuilder(title);
             sb.Append("\n");
@@ -163,7 +187,7 @@ namespace GitImporter
 
         public override string ToString()
         {
-            return string.Format("{0}@{1} : {2} changes between {3} and {4}", AuthorName, Branch,
+            return string.Format("Id {0}, {1}@{2} : {3} changes between {4} and {5}", Id, AuthorName, Branch,
                 Versions.Count + Renamed.Count + Removed.Count, StartTime, FinishTime);
         }
     }

@@ -30,29 +30,29 @@ namespace GitImporter
         {
             ElementsByOid = vobDB != null ? vobDB.ElementsByOid : new Dictionary<string, Element>();
 
-            Logger.TraceData(TraceEventType.Start | TraceEventType.Information, (int)TraceId.ReadCleartool, "start fetching oids of exported elements");
+            Logger.TraceData(TraceEventType.Start | TraceEventType.Information, (int)TraceId.ReadCleartool, "Start fetching oids of exported elements");
             int i = 0;
             foreach (var element in elements)
             {
                 if (++i % 500 == 0)
-                    Logger.TraceData(TraceEventType.Information, (int)TraceId.ReadCleartool, "fetching oid for element " + i);
+                    Logger.TraceData(TraceEventType.Information, (int)TraceId.ReadCleartool, "Fetching oid for element " + i);
                 string oid = _cleartool.GetOid(element.Name);
                 if (string.IsNullOrEmpty(oid))
                 {
-                    Logger.TraceData(TraceEventType.Warning, (int)TraceId.ReadCleartool, "could not find oid for element " + element.Name);
+                    Logger.TraceData(TraceEventType.Warning, (int)TraceId.ReadCleartool, "Could not find oid for element " + element.Name);
                     continue;
                 }
                 element.Oid = oid;
                 ElementsByOid[oid] = element;
             }
-            Logger.TraceData(TraceEventType.Stop | TraceEventType.Information, (int)TraceId.ReadCleartool, "stop fetching oids of exported elements");
+            Logger.TraceData(TraceEventType.Stop | TraceEventType.Information, (int)TraceId.ReadCleartool, "Stop fetching oids of exported elements");
         }
 
         public void Read(string directoriesFile, string elementsFile)
         {
             if (!string.IsNullOrWhiteSpace(elementsFile))
             {
-                Logger.TraceData(TraceEventType.Start | TraceEventType.Information, (int)TraceId.ReadCleartool, "start reading file elements", elementsFile);
+                Logger.TraceData(TraceEventType.Start | TraceEventType.Information, (int)TraceId.ReadCleartool, "Start reading file elements", elementsFile);
                 using (var files = new StreamReader(elementsFile))
                 {
                     string line;
@@ -60,15 +60,15 @@ namespace GitImporter
                     while ((line = files.ReadLine()) != null)
                     {
                         if (++i % 100 == 0)
-                            Logger.TraceData(TraceEventType.Information, (int)TraceId.ReadCleartool, "reading file element " + i);
+                            Logger.TraceData(TraceEventType.Information, (int)TraceId.ReadCleartool, "Reading file element " + i);
                         ReadElement(line, false);
                     }
                 }
-                Logger.TraceData(TraceEventType.Stop | TraceEventType.Information, (int)TraceId.ReadCleartool, "stop reading file elements", elementsFile);
+                Logger.TraceData(TraceEventType.Stop | TraceEventType.Information, (int)TraceId.ReadCleartool, "Stop reading file elements", elementsFile);
             }
             if (!string.IsNullOrWhiteSpace(directoriesFile))
             {
-                Logger.TraceData(TraceEventType.Start | TraceEventType.Information, (int)TraceId.ReadCleartool, "start reading directory elements", directoriesFile);
+                Logger.TraceData(TraceEventType.Start | TraceEventType.Information, (int)TraceId.ReadCleartool, "Start reading directory elements", directoriesFile);
                 using (var directories = new StreamReader(directoriesFile))
                 {
                     string line;
@@ -76,14 +76,14 @@ namespace GitImporter
                     while ((line = directories.ReadLine()) != null)
                     {
                         if (++i % 20 == 0)
-                            Logger.TraceData(TraceEventType.Information, (int)TraceId.ReadCleartool, "reading directory element " + i);
+                            Logger.TraceData(TraceEventType.Information, (int)TraceId.ReadCleartool, "Reading directory element " + i);
                         ReadElement(line, true);
                     }
                 }
-                Logger.TraceData(TraceEventType.Stop | TraceEventType.Information, (int)TraceId.ReadCleartool, "stop reading directory elements", directoriesFile);
+                Logger.TraceData(TraceEventType.Stop | TraceEventType.Information, (int)TraceId.ReadCleartool, "Stop reading directory elements", directoriesFile);
             }
 
-            Logger.TraceData(TraceEventType.Start | TraceEventType.Information, (int)TraceId.ReadCleartool, "start fixups");
+            Logger.TraceData(TraceEventType.Start | TraceEventType.Information, (int)TraceId.ReadCleartool, "Start fixups");
             foreach (var fixup in _fixups)
             {
                 Element childElement;
@@ -91,9 +91,9 @@ namespace GitImporter
                     fixup.Item1.Content.Add(new KeyValuePair<string, Element>(fixup.Item2, childElement));
                 else
                     Logger.TraceData(TraceEventType.Verbose, (int)TraceId.ReadCleartool,
-                                     "element " + fixup.Item2 + " (oid:" + fixup.Item3 + ") referenced as " + fixup.Item2 + " in " + fixup.Item1 + " was not imported");
+                                     "Element " + fixup.Item2 + " (oid:" + fixup.Item3 + ") referenced as " + fixup.Item2 + " in " + fixup.Item1 + " was not imported");
             }
-            Logger.TraceData(TraceEventType.Stop | TraceEventType.Information, (int)TraceId.ReadCleartool, "stop fixups");
+            Logger.TraceData(TraceEventType.Stop | TraceEventType.Information, (int)TraceId.ReadCleartool, "Stop fixups");
         }
 
         private void ReadElement(string elementName, bool isDir)
@@ -104,14 +104,14 @@ namespace GitImporter
             string oid = _cleartool.GetOid(elementName);
             if (string.IsNullOrEmpty(oid))
             {
-                Logger.TraceData(TraceEventType.Warning, (int)TraceId.ReadCleartool, "could not find oid for element " + elementName);
+                Logger.TraceData(TraceEventType.Warning, (int)TraceId.ReadCleartool, "Could not find oid for element " + elementName);
                 return;
             }
             if (string.IsNullOrEmpty(oid) || ElementsByOid.ContainsKey(oid))
                 return;
 
             Logger.TraceData(TraceEventType.Start | TraceEventType.Verbose, (int)TraceId.ReadCleartool,
-                "start reading " + (isDir ? "directory" : "file") + " element", elementName);
+                "Start reading " + (isDir ? "directory" : "file") + " element", elementName);
             var element = new Element(elementName, isDir) { Oid = oid };
             ElementsByOid[oid] = element;
             foreach (string versionString in _cleartool.Lsvtree(elementName))
@@ -119,7 +119,7 @@ namespace GitImporter
                 // there is a first "version" for each branch, without a version number
                 if (!_fullVersionRegex.IsMatch(versionString))
                     continue;
-                Logger.TraceData(TraceEventType.Verbose, (int)TraceId.ReadCleartool, "creating version", versionString);
+                Logger.TraceData(TraceEventType.Verbose, (int)TraceId.ReadCleartool, "Creating version", versionString);
                 string[] versionPath = versionString.Split(new[] { '\\' }, StringSplitOptions.RemoveEmptyEntries);
                 string branchName = versionPath[versionPath.Length - 2];
                 ElementBranch branch;
@@ -152,7 +152,7 @@ namespace GitImporter
                 _cleartool.GetVersionDetails(version);
                 branch.Versions.Add(version);
             }
-            Logger.TraceData(TraceEventType.Stop | TraceEventType.Verbose, (int)TraceId.ReadCleartool, "stop reading element", elementName);
+            Logger.TraceData(TraceEventType.Stop | TraceEventType.Verbose, (int)TraceId.ReadCleartool, "Stop reading element", elementName);
         }
 
         public void Dispose()
