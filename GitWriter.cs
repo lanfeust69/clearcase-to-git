@@ -54,6 +54,9 @@ namespace GitImporter
 
         private void WriteChangeSet(ChangeSet changeSet)
         {
+            if (changeSet.IsEmpty)
+                return;
+
             string branchName = changeSet.Branch == "main" ? "master" : changeSet.Branch;
             _writer.Write("commit refs/heads/" + branchName + "\n");
             _writer.Write("mark :" + changeSet.Id + "\n");
@@ -66,6 +69,8 @@ namespace GitImporter
             _writer.Write("\n");
             if (changeSet.BranchingPoint != null)
                 _writer.Write("from :" + changeSet.BranchingPoint.Id + "\n");
+            foreach (var merge in changeSet.Merges)
+                _writer.Write("merge :" + merge.Id + "\n");
 
             // order is significant : we must Rename and Copy files before (maybe) deleting their directory
             foreach (var pair in changeSet.Renamed)
@@ -89,7 +94,7 @@ namespace GitImporter
                     }
                     continue;
                 }
-                
+
                 string fileName = _cleartool.Get(namedVersion.Version.ToString());
                 var fileInfo = new FileInfo(fileName);
                 if (!fileInfo.Exists)

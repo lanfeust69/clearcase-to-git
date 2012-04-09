@@ -49,6 +49,8 @@ namespace GitImporter
 
         public static TraceSource Logger = Program.Logger;
 
+        public int Id { get; set; }
+
         public string AuthorName { get; private set; }
         public string AuthorLogin { get; private set; }
         public string Branch { get; private set; }
@@ -61,10 +63,21 @@ namespace GitImporter
         public List<string> Removed { get; private set; }
         public List<Tuple<string, string>> Copied { get; private set; }
 
-        public int Id { get; set; }
         public ChangeSet BranchingPoint { get; set; }
+        public bool IsBranchingPoint { get; set; }
+
+        public List<ChangeSet> Merges { get; private set; }
 
         public List<string> Labels { get; set; }
+
+        public bool IsEmpty
+        {
+            get
+            {
+                return Versions.Where(v => !v.Version.Element.IsDirectory).Count() == 0 &&
+                    Renamed.Count == 0 && Removed.Count == 0 && Copied.Count == 0 && !IsBranchingPoint;
+            }
+        }
 
         public ChangeSet(string authorName, string authorLogin, string branch, DateTime time)
         {
@@ -78,6 +91,8 @@ namespace GitImporter
             Renamed = new List<Tuple<string, string>>();
             Removed = new List<string>();
             Copied = new List<Tuple<string, string>>();
+
+            Merges = new List<ChangeSet>();
 
             Labels = new List<string>();
         }
@@ -122,10 +137,11 @@ namespace GitImporter
         {
             var interestingFileChanges = Versions.Where(v => v.InRawChangeSet && v.Names.Count > 0 && !v.Version.Element.IsDirectory).ToList();
             int nbFileChanges = interestingFileChanges.Count;
-            int nbDirectoryChanges = Versions.Where(v => v.InRawChangeSet && v.Version.Element.IsDirectory).Count();
+            int nbDirectoryChanges = Removed.Count + Renamed.Count + Copied.Count +
+                Versions.Where(v => !v.InRawChangeSet && v.Names.Count > 0 && !v.Version.Element.IsDirectory).Count();
             if (nbFileChanges == 0)
-                return nbDirectoryChanges > 0 ? nbDirectoryChanges + " director" + (nbDirectoryChanges > 1 ? "ies" : "y") + " modified" : "No actual change";
-            
+                return nbDirectoryChanges > 0 ? nbDirectoryChanges + " tree modification" + (nbDirectoryChanges > 1 ? "s" : "") : "No actual change";
+
             var allComments = interestingFileChanges.Where(v => !string.IsNullOrWhiteSpace(v.Version.Comment))
                 .Select(v => new { Name = v.Names[0], v.Version.Comment })
                 .GroupBy(e => (e.Comment ?? "").Trim().Replace("\r", ""))
@@ -134,10 +150,10 @@ namespace GitImporter
 
             string title;
             if (nbDirectoryChanges > 0)
-                title = string.Format("{0} file{1} and {2} director{3} modified",
-                    nbFileChanges, (nbFileChanges > 1 ? "s" : ""), nbDirectoryChanges, nbDirectoryChanges > 1 ? "ies" : "y");
+                title = string.Format("{0} file modification{1} and {2} tree modification{3}",
+                    nbFileChanges, (nbFileChanges > 1 ? "s" : ""), nbDirectoryChanges, nbDirectoryChanges > 1 ? "s" : "");
             else
-                title = string.Format("{0} file{1} modified", nbFileChanges, (nbFileChanges > 1 ? "s" : ""));
+                title = string.Format("{0} file modification{1}", nbFileChanges, (nbFileChanges > 1 ? "s" : ""));
 
             if (allComments.Count == 0)
                 return title + " : " + DisplayFileNames(interestingFileChanges.Select(v => v.Names[0]).ToList(), false);

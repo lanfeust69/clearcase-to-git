@@ -304,6 +304,7 @@ namespace GitImporter
                     {
                         string parentBranch = _globalBranches[changeSet.Branch];
                         changeSet.BranchingPoint = branchTips[parentBranch];
+                        branchTips[parentBranch].IsBranchingPoint = true;
                         elementsNames = new Dictionary<Element, List<string>>(elementsNamesByBranch[parentBranch]);
                         elementsVersions = new Dictionary<Element, ElementVersion>(elementsVersionsByBranch[parentBranch]);
                     }
@@ -342,21 +343,16 @@ namespace GitImporter
                             throw new Exception("Version " + namedVersion.Version + " was named " + namedVersion.Names[0] + ", but had no entry in elementNames");
 
                         Logger.TraceData(TraceEventType.Verbose, (int)TraceId.CreateChangeSet,
-                                         "Version " + namedVersion.Version + " was not yet visible in an existing directory version");
-                        List<Tuple<string, ChangeSet.NamedVersion>> orphanedVersions;
-                        if (!orphanedVersionsByElement.TryGetValue(namedVersion.Version.Element, out orphanedVersions))
-                        {
-                            orphanedVersions = new List<Tuple<string, ChangeSet.NamedVersion>>();
-                            orphanedVersionsByElement.Add(namedVersion.Version.Element, orphanedVersions);
-                        }
-                        orphanedVersions.Add(new Tuple<string, ChangeSet.NamedVersion>(changeSet.Branch, namedVersion));
+                            "Version " + namedVersion.Version + " was not yet visible in an existing directory version");
+                        orphanedVersionsByElement.AddToCollection(namedVersion.Version.Element,
+                            new Tuple<string, ChangeSet.NamedVersion>(changeSet.Branch, namedVersion));
                         continue;
                     }
                     namedVersion.Names.AddRange(elementNames);
                 }
                 Logger.TraceData(TraceEventType.Start | TraceEventType.Verbose, (int)TraceId.CreateChangeSet, "Stop process element names in ChangeSet", changeSet.Id);
             }
-            
+
             // really lost versions
             foreach (var orphanedVersions in orphanedVersionsByElement.Values)
                 foreach (var orphanedVersion in orphanedVersions)
