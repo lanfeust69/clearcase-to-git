@@ -82,7 +82,7 @@ namespace GitImporter
 
             foreach (var namedVersion in changeSet.Versions)
             {
-                if (namedVersion.Version is DirectoryVersion)
+                if (namedVersion.Version is DirectoryVersion || namedVersion.Names.Count == 0)
                     continue;
 
                 if (_doNotIncludeFileContent)

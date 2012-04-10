@@ -74,7 +74,7 @@ namespace GitImporter
         {
             get
             {
-                return Versions.Where(v => !v.Version.Element.IsDirectory).Count() == 0 &&
+                return Versions.Where(v => !v.Version.Element.IsDirectory && v.Names.Count > 0).Count() == 0 &&
                     Renamed.Count == 0 && Removed.Count == 0 && Copied.Count == 0 && !IsBranchingPoint;
             }
         }
