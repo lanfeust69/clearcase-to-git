@@ -58,9 +58,15 @@ namespace GitImporter
             }
             ElementsByOid = _rawElements.ToDictionary(e => e.Oid);
             foreach (var element in _rawElements)
+            {
+                var symlink = element as SymLinkElement;
+                if (symlink != null)
+                    symlink.Fixup(ElementsByOid);
+
                 foreach (var branch in element.Branches.Values)
                     foreach (var version in branch.Versions.OfType<DirectoryVersion>())
                         version.FixContent(ElementsByOid);
+            }
             _rawElements = null;
         }
     }

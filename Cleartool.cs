@@ -115,7 +115,7 @@ namespace GitImporter
         /// <summary>
         /// List content of a directory (possibly with a version-extended path),
         /// as a dictionary &lt;name as it appears in this version, oid of the element&gt;
-        /// We try to resolve symbolic links immediately, but not in a very robust way
+        /// Symbolic links are stored as a string with the SYMLINK prefix
         /// </summary>
         public Dictionary<string, string> Ls(string element)
         {
@@ -134,9 +134,7 @@ namespace GitImporter
                 else if ((match = _oidRegex.Match(line)).Success)
                     oid = match.Groups[1].Value;
                 else if ((match = _symlinkRegex.Match(line)).Success)
-                {
-                    // TODO : handle symlinks
-                }
+                    oid = SymLinkElement.SYMLINK + match.Groups[1].Value;
             }
             if (name != null && oid != null)
                 result[name] = oid;

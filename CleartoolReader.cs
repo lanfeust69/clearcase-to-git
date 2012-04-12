@@ -169,6 +169,12 @@ namespace GitImporter
                     Element childElement;
                     if (ElementsByOid.TryGetValue(child.Value, out childElement))
                         dirVersion.Content.Add(new KeyValuePair<string, Element>(child.Key, childElement));
+                    else if (child.Value.StartsWith(SymLinkElement.SYMLINK))
+                    {
+                        var symLink = new SymLinkElement(dirVersion, child.Value);
+                        ElementsByOid.Add(symLink.Oid, symLink);
+                        dirVersion.Content.Add(new KeyValuePair<string, Element>(child.Key, symLink));
+                    }
                     else
                         _fixups.Add(new Tuple<DirectoryVersion, string, string>(dirVersion, child.Key, child.Value));
                 }
