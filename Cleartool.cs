@@ -145,10 +145,26 @@ namespace GitImporter
 
         public string GetOid(string element)
         {
+            bool isDir;
+            return GetOid(element, out isDir);
+        }
+
+        public string GetOid(string element, out bool isDir)
+        {
+            isDir = false;
             if (!element.EndsWith("@@"))
                 element += "@@";
-            var result = ExecuteCommand("desc -fmt %On \"" + element + "\"");
-            return result.Count > 0 ? result[0] : null;
+            var result = ExecuteCommand("desc -fmt %On§%m \"" + element + "\"");
+            if (result.Count == 0)
+                return null;
+            string[] parts = result[0].Split('§');
+            isDir = parts[1] == "directory element";
+            return parts[0];
+        }
+
+        public string GetPredecessor(string version)
+        {
+            return ExecuteCommand("desc -pred -s \"" + version + "\"").FirstOrDefault();
         }
 
         public void GetVersionDetails(ElementVersion version)

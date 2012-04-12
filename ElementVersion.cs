@@ -85,7 +85,7 @@ namespace GitImporter
             MergesFrom = _rawMergesFrom == null ? new List<ElementVersion>()
                 : _rawMergesFrom.Select(r => Element.Branches[r.BranchName].Versions.First(v => v.VersionNumber == r.VersionNumber)).ToList();
             _rawMergesFrom = null;
-            MergesFrom = _rawMergesTo == null ? new List<ElementVersion>()
+            MergesTo = _rawMergesTo == null ? new List<ElementVersion>()
                 : _rawMergesTo.Select(r => Element.Branches[r.BranchName].Versions.First(v => v.VersionNumber == r.VersionNumber)).ToList();
             _rawMergesTo = null;
             if (Labels == null)

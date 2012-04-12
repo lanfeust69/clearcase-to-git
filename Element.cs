@@ -10,7 +10,7 @@ namespace GitImporter
     public class Element
     {
         [ProtoMember(1)]
-        public string Name { get; private set; }
+        public string Name { get; set; }
         [ProtoMember(2)]
         public bool IsDirectory { get; private set; }
         [ProtoMember(3)]

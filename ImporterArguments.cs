@@ -13,6 +13,8 @@ namespace GitImporter
         public string DirectoriesFile;
         [Argument(ArgumentType.AtMostOnce, HelpText = "File listing (non-directory) elements to import.")]
         public string ElementsFile;
+        [Argument(ArgumentType.AtMostOnce, HelpText = "File listing individual versions to import.")]
+        public string VersionsFile;
         [Argument(ArgumentType.MultipleUnique, HelpText = "Roots : directory elements whose parents are not imported.", DefaultValue = new[] { "." })]
         public string[] Roots;
         [Argument(ArgumentType.MultipleUnique, HelpText = "Branches to import (may be a regular expression).", DefaultValue = new[] { "PROD\\d+\\.\\d+" })]
@@ -34,9 +36,9 @@ namespace GitImporter
                 return false;
             }
             if ((LoadVobDB == null || LoadVobDB.Length == 0) &&
-                (string.IsNullOrWhiteSpace(DirectoriesFile) || string.IsNullOrWhiteSpace(ElementsFile)))
+                (string.IsNullOrWhiteSpace(DirectoriesFile) || string.IsNullOrWhiteSpace(ElementsFile) || string.IsNullOrWhiteSpace(VersionsFile)))
             {
-                Console.Error.WriteLine("Either [LoadVobDB] or [DirectoriesFile, ElementsFile and optionally ExportFiles] must be provided");
+                Console.Error.WriteLine("Either [LoadVobDB] or [at least one from DirectoriesFile, ElementsFile and VersionsFile (and optionally ExportFiles)] must be provided");
                 return false;
             }
             return true;

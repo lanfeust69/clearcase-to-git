@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using ProtoBuf;
 
@@ -31,8 +32,10 @@ namespace GitImporter
                     ElementsByOid.Add(pair.Key, pair.Value);
                     continue;
                 }
+                // TODO : we should keep the one with the most versions/branches
                 if (existing.Name != pair.Value.Name)
-                    throw new Exception(string.Format("Name mismatchElement with oid {0} : {1} != {2}", existing.Oid, existing.Name, pair.Value.Name));
+                    Program.Logger.TraceData(TraceEventType.Information, 0,
+                        string.Format("element with oid {0} has a different name : keeping {1}, ignoring {2}", existing.Oid, existing.Name, pair.Value.Name));
             }
         }
 
