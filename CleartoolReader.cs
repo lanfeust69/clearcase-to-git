@@ -18,7 +18,8 @@ namespace GitImporter
 
         public Dictionary<string, Element> ElementsByOid { get; private set; }
 
-        private List<Tuple<DirectoryVersion, string, string>> _fixups = new List<Tuple<DirectoryVersion, string, string>>();
+        private readonly List<Tuple<DirectoryVersion, string, string>> _contentFixups = new List<Tuple<DirectoryVersion, string, string>>();
+        private readonly List<Tuple<ElementVersion, string, int, bool>> _mergeFixups = new List<Tuple<ElementVersion, string, int, bool>>();
 
         public CleartoolReader(string clearcaseRoot)
         {
@@ -103,7 +104,7 @@ namespace GitImporter
             }
 
             Logger.TraceData(TraceEventType.Start | TraceEventType.Information, (int)TraceId.ReadCleartool, "Start fixups");
-            foreach (var fixup in _fixups)
+            foreach (var fixup in _contentFixups)
             {
                 Element childElement;
                 if (ElementsByOid.TryGetValue(fixup.Item3, out childElement))
@@ -111,6 +112,19 @@ namespace GitImporter
                 else
                     Logger.TraceData(TraceEventType.Verbose, (int)TraceId.ReadCleartool,
                                      "Element " + fixup.Item2 + " (oid:" + fixup.Item3 + ") referenced as " + fixup.Item2 + " in " + fixup.Item1 + " was not imported");
+            }
+            foreach (var fixup in _mergeFixups)
+            {
+                ElementVersion toFix = fixup.Item1;
+                ElementVersion linkTo = toFix.Element.GetVersion(fixup.Item2, fixup.Item3);
+                if (linkTo == null)
+                {
+                    Logger.TraceData(TraceEventType.Verbose, (int)TraceId.ReadCleartool,
+                                     "Version " + fixup.Item2 + "/" + fixup.Item3 + " of " + toFix.Element +
+                                     ", linked to " + toFix.Branch.BranchName + "/" + toFix.VersionNumber + ", was not imported");
+                    continue;
+                }
+                (fixup.Item4 ? toFix.MergesTo : toFix.MergesFrom).Add(linkTo);
             }
             Logger.TraceData(TraceEventType.Stop | TraceEventType.Information, (int)TraceId.ReadCleartool, "Stop fixups");
         }
@@ -176,13 +190,25 @@ namespace GitImporter
                         dirVersion.Content.Add(new KeyValuePair<string, Element>(child.Key, symLink));
                     }
                     else
-                        _fixups.Add(new Tuple<DirectoryVersion, string, string>(dirVersion, child.Key, child.Value));
+                        _contentFixups.Add(new Tuple<DirectoryVersion, string, string>(dirVersion, child.Key, child.Value));
                 }
                 version = dirVersion;
             }
             else
                 version = new ElementVersion(branch, versionNumber);
-            _cleartool.GetVersionDetails(version);
+            List<Tuple<string, int>> mergesTo, mergesFrom;
+            _cleartool.GetVersionDetails(version, out mergesTo, out mergesFrom);
+            if (mergesTo != null)
+                foreach (var merge in mergesTo)
+                    // only merges between branches are interesting
+                    if (merge.Item1 != branch.BranchName)
+                        _mergeFixups.Add(new Tuple<ElementVersion, string, int, bool>(version, merge.Item1, merge.Item2, true));
+            if (mergesFrom != null)
+                foreach (var merge in mergesFrom)
+                    // only merges between branches are interesting
+                    if (merge.Item1 != branch.BranchName)
+                        _mergeFixups.Add(new Tuple<ElementVersion, string, int, bool>(version, merge.Item1, merge.Item2, false));
+
             branch.Versions.Add(version);
         }
 

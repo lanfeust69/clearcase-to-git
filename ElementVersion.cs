@@ -83,10 +83,10 @@ namespace GitImporter
         {
             Branch = branch;
             MergesFrom = _rawMergesFrom == null ? new List<ElementVersion>()
-                : _rawMergesFrom.Select(r => Element.Branches[r.BranchName].Versions.First(v => v.VersionNumber == r.VersionNumber)).ToList();
+                : _rawMergesFrom.Select(r => Element.GetVersion(r.BranchName, r.VersionNumber)).ToList();
             _rawMergesFrom = null;
             MergesTo = _rawMergesTo == null ? new List<ElementVersion>()
-                : _rawMergesTo.Select(r => Element.Branches[r.BranchName].Versions.First(v => v.VersionNumber == r.VersionNumber)).ToList();
+                : _rawMergesTo.Select(r => Element.GetVersion(r.BranchName, r.VersionNumber)).ToList();
             _rawMergesTo = null;
             if (Labels == null)
                 Labels = new List<string>();

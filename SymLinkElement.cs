@@ -7,7 +7,7 @@ using ProtoBuf;
 namespace GitImporter
 {
     [Serializable]
-    [ProtoContract, ProtoInclude(100, typeof(Element))]
+    [ProtoContract]
     public class SymLinkElement : Element
     {
         public const string SYMLINK = "symlink:";

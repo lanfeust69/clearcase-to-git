@@ -6,7 +6,7 @@ using ProtoBuf;
 namespace GitImporter
 {
     [Serializable]
-    [ProtoContract]
+    [ProtoContract, ProtoInclude(100, typeof(SymLinkElement))]
     public class Element
     {
         [ProtoMember(1)]
@@ -29,6 +29,15 @@ namespace GitImporter
         // for Protobuf deserialization
         public Element()
         {}
+
+        public ElementVersion GetVersion(string branchName, int versionNumber)
+        {
+            ElementBranch branch;
+            if (!Branches.TryGetValue(branchName, out branch))
+                return null;
+            // could be faster with a List.BinarySearch
+            return branch.Versions.FirstOrDefault(v => v.VersionNumber == versionNumber);
+        }
 
         public override string ToString()
         {

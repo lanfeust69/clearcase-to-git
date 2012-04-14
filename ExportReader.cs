@@ -21,6 +21,7 @@ namespace GitImporter
         private readonly Regex _commentRegex = new Regex(@"^Comment (\d+):(.*)");
         private readonly Regex _labelRegex = new Regex(@"^Label \d+:(.*)");
         private readonly Regex _subBranchRegex = new Regex(@"^SubBranch \d+:(.*)");
+        private readonly Regex _mergeRegex = new Regex(@"^(F)?Merge \d+:([^\\]+\\)*(\d+)");
 
         public IList<Element> Elements { get; private set; }
 
@@ -51,6 +52,7 @@ namespace GitImporter
             Element currentElement = null;
             ElementBranch currentBranch = null;
             ElementVersion currentVersion = null;
+            List<Tuple<ElementVersion, string, int, bool>> currentElementMerges = new List<Tuple<ElementVersion, string, int, bool>>();
             Match match;
             int lineNb = 0;
             int missingCommentChars = 0;
@@ -85,6 +87,7 @@ namespace GitImporter
                     currentBranch = null;
                     currentElement = null;
                     currentVersion = null;
+                    currentElementMerges.Clear();
                     continue;
                 }
                 if (currentElement == null && (match = _elementNameRegex.Match(line)).Success)
@@ -97,6 +100,11 @@ namespace GitImporter
                 }
                 if (line == "ELEMENT_END")
                 {
+                    if (currentElement == null)
+                        throw new Exception(file + ", line " + lineNb + " : Unexpected ELEMENT_END before it was named");
+                    foreach (var merge in currentElementMerges)
+                        (merge.Item4 ? merge.Item1.MergesTo : merge.Item1.MergesFrom).Add(currentElement.GetVersion(merge.Item2, merge.Item3));
+
                     Logger.TraceData(TraceEventType.Stop | TraceEventType.Verbose, (int)TraceId.ReadExport, "Stop reading element", currentElementName);
                     continue;
                 }
@@ -164,6 +172,20 @@ namespace GitImporter
                     if (currentElement.Branches.ContainsKey(branchName))
                         throw new Exception(file + ", line " + lineNb + " : Duplicated branch " + branchName);
                     currentElement.Branches[branchName] = new ElementBranch(currentElement, branchName, currentVersion);
+                    continue;
+                }
+                if (currentVersion != null && (match = _mergeRegex.Match(line)).Success)
+                {
+                    bool mergeTo = match.Groups[1].Success;
+                    // Groups[i].Value is the last capture : ok here
+                    string branchCapture = match.Groups[2].Value;
+                    string branchName = string.IsNullOrEmpty(branchCapture) ? "main" : branchCapture.Substring(0, branchCapture.Length - 1);
+                    int versionNumber = int.Parse(match.Groups[3].Value);
+
+                    // not interested in merges from same branch
+                    if (branchName != currentBranch.BranchName)
+                        currentElementMerges.Add(new Tuple<ElementVersion, string, int, bool>(currentVersion, branchName, versionNumber, mergeTo));
+
                     continue;
                 }
             }

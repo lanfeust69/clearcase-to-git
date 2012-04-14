@@ -36,7 +36,7 @@ namespace GitImporter
                 return false;
             }
             if ((LoadVobDB == null || LoadVobDB.Length == 0) &&
-                (string.IsNullOrWhiteSpace(DirectoriesFile) || string.IsNullOrWhiteSpace(ElementsFile) || string.IsNullOrWhiteSpace(VersionsFile)))
+                string.IsNullOrWhiteSpace(DirectoriesFile) && string.IsNullOrWhiteSpace(ElementsFile) && string.IsNullOrWhiteSpace(VersionsFile))
             {
                 Console.Error.WriteLine("Either [LoadVobDB] or [at least one from DirectoriesFile, ElementsFile and VersionsFile (and optionally ExportFiles)] must be provided");
                 return false;

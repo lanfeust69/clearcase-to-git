@@ -20,8 +20,9 @@ namespace GitImporter
         private readonly ManualResetEventSlim _cleartoolAvailable = new ManualResetEventSlim();
 
         private readonly Regex _directoryEntryRegex = new Regex("^===> name: \"([^\"]+)\"");
-        private readonly Regex _oidRegex = new Regex("cataloged oid: (\\S+) \\(mtype \\d+\\)");
+        private readonly Regex _oidRegex = new Regex(@"cataloged oid: (\S+) \(mtype \d+\)");
         private readonly Regex _symlinkRegex = new Regex("^.+ --> (.+)$");
+        private readonly Regex _mergeRegex = new Regex(@"^(""Merge@\d+@[^""]+"" (<-|->) ""[^""]+\\([\w\.]+)\\(\d+)"" )+$");
 
         private List<string> _currentOutput = new List<string>();
 
@@ -165,10 +166,13 @@ namespace GitImporter
             return ExecuteCommand("desc -pred -s \"" + version + "\"").FirstOrDefault();
         }
 
-        public void GetVersionDetails(ElementVersion version)
+        public void GetVersionDetails(ElementVersion version, out List<Tuple<string, int>> mergesTo, out List<Tuple<string, int>> mergesFrom)
         {
+            bool isDir = version.Element.IsDirectory;
+            // not interested in directory merges
+            string format = "%Fu§%u§%Nd§%Nc§%Nl" + (isDir ? "" : "§%[hlink:Merge]p");
             // string.Join to handle multi-line comments
-            string raw = string.Join("\r\n", ExecuteCommand("desc -fmt %Fu§%u§%Nd§%Nc§%Nl \"" + version + "\""));
+            string raw = string.Join("\r\n", ExecuteCommand("desc -fmt \"" + format + "\" \"" + version + "\""));
             string[] parts = raw.Split('§');
             version.AuthorName = string.Intern(parts[0]);
             version.AuthorLogin = string.Intern(parts[1]);
@@ -177,6 +181,22 @@ namespace GitImporter
             foreach (string label in parts[4].Split(' '))
                 if (!string.IsNullOrWhiteSpace(label))
                     version.Labels.Add(string.Intern(label));
+            mergesTo = mergesFrom = null;
+            if (isDir || string.IsNullOrEmpty(parts[5]))
+                return;
+
+            Match match = _mergeRegex.Match(parts[5]);
+            if (!match.Success)
+            {
+                Logger.TraceData(TraceEventType.Warning, (int)TraceId.Cleartool, "Failed to parse merge data '" + parts[5] + "'");
+                return;
+            }
+            mergesTo = new List<Tuple<string, int>>();
+            mergesFrom = new List<Tuple<string, int>>();
+            int count = match.Groups[1].Captures.Count;
+            for (int i = 0; i < count; i++)
+                (match.Groups[2].Captures[i].Value == "->" ? mergesTo : mergesFrom)
+                    .Add(new Tuple<string, int>(match.Groups[3].Captures[i].Value, int.Parse(match.Groups[4].Captures[i].Value)));
         }
 
         public string Get(string element)
