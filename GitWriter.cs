@@ -85,13 +85,15 @@ namespace GitImporter
                 if (namedVersion.Version is DirectoryVersion || namedVersion.Names.Count == 0)
                     continue;
 
-                if (_doNotIncludeFileContent)
+                bool isEmptyFile = namedVersion.Version.VersionNumber == 0 && namedVersion.Version.Branch.BranchName == "main";
+
+                if (_doNotIncludeFileContent || isEmptyFile)
                 {
                     foreach (string name in namedVersion.Names)
-                    {
-                        _writer.Write("M 644 inline " + name + "\ndata <<EOF\n");
-                        _writer.Write(namedVersion + "\nEOF\n\n");
-                    }
+                        if (isEmptyFile)
+                            _writer.Write("M 644 inline " + name + "\ndata 0\n\n");
+                        else
+                            _writer.Write("M 644 inline " + name + "\ndata <<EOF\n" + namedVersion.Version + "\nEOF\n\n");
                     continue;
                 }
 

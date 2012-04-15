@@ -17,14 +17,16 @@ namespace GitImporter
         public string VersionsFile;
         [Argument(ArgumentType.MultipleUnique, HelpText = "Roots : directory elements whose parents are not imported.", DefaultValue = new[] { "." })]
         public string[] Roots;
-        [Argument(ArgumentType.MultipleUnique, HelpText = "Branches to import (may be a regular expression).", DefaultValue = new[] { "PROD\\d+\\.\\d+" })]
+        [Argument(ArgumentType.MultipleUnique, HelpText = "Branches to import (may be a regular expression).", DefaultValue = new[] { "^PROD\\d+\\.\\d+" })]
         public string[] Branches;
-        [Argument(ArgumentType.Required, HelpText = "Full path from which element names are specified (must be within a clearcase view).")]
+        [Argument(ArgumentType.AtMostOnce, HelpText = "Full path from which element names are specified (must be within a clearcase view).")]
         public string ClearcaseRoot;
         [Argument(ArgumentType.AtMostOnce, HelpText = "Indicates to stop after having saved clearcase data.")]
         public bool GenerateVobDBOnly;
         [Argument(ArgumentType.AtMostOnce, HelpText = "Indicates not to load file contents from clearcase.", DefaultValue = false)]
         public bool NoFileContent;
+        [Argument(ArgumentType.AtMostOnce, HelpText = "File previously generated with -NoFileContent, where content will now be retrieved from clearcase.")]
+        public string FetchFileContent;
         [DefaultArgument(ArgumentType.MultipleUnique, HelpText = "Export files generated using clearexport. Each file is supposed to be directly in the working directory, but there may be a prefix that means a path from the main clearcase root.")]
         public string[] ExportFiles = new string[0];
 
@@ -35,12 +37,25 @@ namespace GitImporter
                 Console.Error.WriteLine("SaveVobDB file must be specified if GenerateVobDBOnly");
                 return false;
             }
-            if ((LoadVobDB == null || LoadVobDB.Length == 0) &&
-                string.IsNullOrWhiteSpace(DirectoriesFile) && string.IsNullOrWhiteSpace(ElementsFile) && string.IsNullOrWhiteSpace(VersionsFile))
+            if (string.IsNullOrEmpty(ClearcaseRoot) && (LoadVobDB == null || LoadVobDB.Length == 0) &&
+                (!NoFileContent || !string.IsNullOrEmpty(DirectoriesFile) || !string.IsNullOrEmpty(ElementsFile) || !string.IsNullOrEmpty(VersionsFile) || ExportFiles.Length > 0))
             {
-                Console.Error.WriteLine("Either [LoadVobDB] or [at least one from DirectoriesFile, ElementsFile and VersionsFile (and optionally ExportFiles)] must be provided");
+                Console.Error.WriteLine("ClearcaseRoot is required except when generating an import file from clearcase data loaded from a file, without actual contents");
                 return false;
             }
+            if (string.IsNullOrEmpty(FetchFileContent) && (LoadVobDB == null || LoadVobDB.Length == 0) &&
+                string.IsNullOrWhiteSpace(DirectoriesFile) && string.IsNullOrWhiteSpace(ElementsFile) && string.IsNullOrWhiteSpace(VersionsFile))
+            {
+                Console.Error.WriteLine("Either [FetchFileContent], [LoadVobDB] or [at least one from DirectoriesFile, ElementsFile and VersionsFile (and optionally ExportFiles)] must be provided");
+                return false;
+            }
+            if (!string.IsNullOrEmpty(FetchFileContent) && ((LoadVobDB != null && LoadVobDB.Length > 0) || !string.IsNullOrEmpty(SaveVobDB) ||
+                !NoFileContent || !string.IsNullOrEmpty(DirectoriesFile) || !string.IsNullOrEmpty(ElementsFile) || !string.IsNullOrEmpty(VersionsFile) || ExportFiles.Length > 0))
+            {
+                Console.Error.WriteLine("FetchFileContent must be used with ClearcaseRoot and no other option");
+                return false;
+            }
+
             return true;
         }
     }

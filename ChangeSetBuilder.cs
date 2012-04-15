@@ -109,7 +109,7 @@ namespace GitImporter
                             }
                             labelInfo.Versions.Add(versionForLabel);
                         }
-                        if (version.VersionNumber == 0)
+                        if (version.VersionNumber == 0 && (version.Element.IsDirectory || version.Branch.BranchName != "main"))
                             continue;
                         List<ChangeSet> authorChangeSets;
                         if (!branchChangeSets.TryGetValue(version.AuthorLogin, out authorChangeSets))
