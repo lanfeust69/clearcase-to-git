@@ -16,14 +16,22 @@ namespace GitImporter
         private readonly Cleartool _cleartool;
 
         private readonly bool _doNotIncludeFileContent;
+        private readonly string _gitIgnoreFile;
+        private bool _gitIgnoreAdded;
 
-        public GitWriter(string clearcaseRoot, bool doNotIncludeFileContent)
+        public GitWriter(string clearcaseRoot, bool doNotIncludeFileContent, string gitIgnoreFile)
         {
             _doNotIncludeFileContent = doNotIncludeFileContent;
+            _gitIgnoreFile = gitIgnoreFile;
             if (_doNotIncludeFileContent)
                 return;
             _cleartool = new Cleartool();
             _cleartool.Cd(clearcaseRoot);
+        }
+
+        public GitWriter(string clearcaseRoot, bool doNotIncludeFileContent)
+            : this(clearcaseRoot, doNotIncludeFileContent, null)
+        {
         }
 
         public void WriteChangeSets(IList<ChangeSet> changeSets)
@@ -38,6 +46,7 @@ namespace GitImporter
             while (total / (frequency = queue.Dequeue()) > 1000)
                 queue.Enqueue(frequency * 10);
 
+            _gitIgnoreAdded = string.IsNullOrEmpty(_gitIgnoreFile); // already "added" if not specified
             foreach (var changeSet in changeSets)
             {
                 n++;
@@ -71,6 +80,20 @@ namespace GitImporter
                 _writer.Write("from :" + changeSet.BranchingPoint.Id + "\n");
             foreach (var merge in changeSet.Merges)
                 _writer.Write("merge :" + merge.Id + "\n");
+
+            if (!_gitIgnoreAdded && branchName == "master")
+            {
+                _gitIgnoreAdded = true;
+                var fileInfo = new FileInfo(_gitIgnoreFile);
+                if (fileInfo.Exists)
+                {
+                    _writer.Write("M 644 inline .gitignore\ndata " + fileInfo.Length + "\n");
+                    // Flush() before using BaseStream directly
+                    _writer.Flush();
+                    using (var s = new FileStream(_gitIgnoreFile, FileMode.Open, FileAccess.Read))
+                        s.CopyTo(_writer.BaseStream);
+                }
+            }
 
             // order is significant : we must Rename and Copy files before (maybe) deleting their directory
             foreach (var pair in changeSet.Renamed)
@@ -131,6 +154,13 @@ namespace GitImporter
                 _writer.Write("tagger Unknown <unknown> " + (changeSet.StartTime - _epoch).TotalSeconds + " +0200\n");
                 _writer.Write("data 0\n\n");
             }
+        }
+
+        public void WriteFile(string fileName)
+        {
+            _writer.Flush();
+            using (var s = new FileStream(fileName, FileMode.Open, FileAccess.Read))
+                s.CopyTo(_writer.BaseStream);
         }
 
         public void Dispose()

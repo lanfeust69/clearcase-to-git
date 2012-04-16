@@ -37,6 +37,13 @@ namespace GitImporter
                 Logger.TraceData(TraceEventType.Start | TraceEventType.Information, 0, "Start program");
                 VobDB vobDB = null;
 
+                if (!string.IsNullOrEmpty(importerArguments.FetchFileContent))
+                {
+                    using (var gitWriter = new GitWriter(importerArguments.ClearcaseRoot, importerArguments.NoFileContent))
+                        gitWriter.WriteFile(importerArguments.FetchFileContent);
+                    Logger.TraceData(TraceEventType.Stop | TraceEventType.Information, 0, "Stop program");
+                    return;
+                }
                 if (importerArguments.LoadVobDB != null && importerArguments.LoadVobDB.Length > 0)
                 {
                     foreach (string vobDBFile in importerArguments.LoadVobDB)
@@ -85,7 +92,7 @@ namespace GitImporter
                     changeSetBuilder.SetBranchFilters(importerArguments.Branches);
                     var changeSets = changeSetBuilder.Build();
 
-                    using (var gitWriter = new GitWriter(importerArguments.ClearcaseRoot, importerArguments.NoFileContent))
+                    using (var gitWriter = new GitWriter(importerArguments.ClearcaseRoot, importerArguments.NoFileContent, importerArguments.IgnoreFile))
                         gitWriter.WriteChangeSets(changeSets);
                 }
 

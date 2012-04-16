@@ -29,6 +29,8 @@ namespace GitImporter
         public bool NoFileContent;
         [Argument(ArgumentType.AtMostOnce, HelpText = "File previously generated with -NoFileContent, where content will now be retrieved from clearcase.")]
         public string FetchFileContent;
+        [Argument(ArgumentType.AtMostOnce, HelpText = "File that will be added as .gitignore at the repo root.")]
+        public string IgnoreFile;
         [DefaultArgument(ArgumentType.MultipleUnique, HelpText = "Export files generated using clearexport. Each file is supposed to be directly in the working directory, but there may be a prefix that means a path from the main clearcase root.")]
         public string[] ExportFiles = new string[0];
 
