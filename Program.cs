@@ -57,7 +57,7 @@ namespace GitImporter
                 if (!string.IsNullOrWhiteSpace(importerArguments.DirectoriesFile) ||
                     !string.IsNullOrWhiteSpace(importerArguments.ElementsFile) ||
                     !string.IsNullOrWhiteSpace(importerArguments.VersionsFile))
-                    using (var cleartoolReader = new CleartoolReader(importerArguments.ClearcaseRoot))
+                    using (var cleartoolReader = new CleartoolReader(importerArguments.ClearcaseRoot, importerArguments.OriginDate))
                     {
                         cleartoolReader.Init(vobDB, exportReader.Elements);
                         // first save of exportReader with oid (if something was actually read)

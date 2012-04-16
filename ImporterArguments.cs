@@ -21,6 +21,8 @@ namespace GitImporter
         public string[] Branches;
         [Argument(ArgumentType.AtMostOnce, HelpText = "Full path from which element names are specified (must be within a clearcase view).")]
         public string ClearcaseRoot;
+        [Argument(ArgumentType.AtMostOnce, HelpText = "Date up to which versions will be retrieved, more recent are discarded (use to keep consistency between directory contents and elements).")]
+        public string OriginDate;
         [Argument(ArgumentType.AtMostOnce, HelpText = "Indicates to stop after having saved clearcase data.")]
         public bool GenerateVobDBOnly;
         [Argument(ArgumentType.AtMostOnce, HelpText = "Indicates not to load file contents from clearcase.", DefaultValue = false)]
@@ -53,6 +55,12 @@ namespace GitImporter
                 !NoFileContent || !string.IsNullOrEmpty(DirectoriesFile) || !string.IsNullOrEmpty(ElementsFile) || !string.IsNullOrEmpty(VersionsFile) || ExportFiles.Length > 0))
             {
                 Console.Error.WriteLine("FetchFileContent must be used with ClearcaseRoot and no other option");
+                return false;
+            }
+            DateTime d;
+            if (!string.IsNullOrEmpty(OriginDate) && !DateTime.TryParse(OriginDate, out d))
+            {
+                Console.Error.WriteLine("OriginDate must be parsable as a DateTime");
                 return false;
             }
 

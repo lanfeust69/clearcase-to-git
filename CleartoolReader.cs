@@ -15,15 +15,17 @@ namespace GitImporter
         private static readonly Regex _versionRegex = new Regex(@"(.*)\@\@(\\main(\\[\w\.]+)*\\\d+)$");
 
         private readonly Cleartool _cleartool = new Cleartool();
+        private readonly DateTime _originDate;
 
         public Dictionary<string, Element> ElementsByOid { get; private set; }
 
         private readonly List<Tuple<DirectoryVersion, string, string>> _contentFixups = new List<Tuple<DirectoryVersion, string, string>>();
         private readonly List<Tuple<ElementVersion, string, int, bool>> _mergeFixups = new List<Tuple<ElementVersion, string, int, bool>>();
 
-        public CleartoolReader(string clearcaseRoot)
+        public CleartoolReader(string clearcaseRoot, string originDate)
         {
             _cleartool.Cd(clearcaseRoot);
+            _originDate = DateTime.Parse(originDate).ToUniversalTime();
         }
 
         public VobDB VobDB { get { return new VobDB(ElementsByOid); } }
@@ -166,12 +168,21 @@ namespace GitImporter
                     branch = new ElementBranch(element, branchName, branchingPoint);
                     element.Branches[branchName] = branch;
                 }
-                AddVersionToBranch(branch, versionNumber, isDir);
+                bool added = AddVersionToBranch(branch, versionNumber, isDir);
+                if (!added)
+                {
+                    // versions was too recent
+                    if (branch.Versions.Count == 0)
+                        // do not leave an empty branch
+                        element.Branches.Remove(branchName);
+                    // versions are retrieved in order of creation : next ones won't make it either
+                    break;
+                }
             }
             Logger.TraceData(TraceEventType.Stop | TraceEventType.Verbose, (int)TraceId.ReadCleartool, "Stop reading element", elementName);
         }
 
-        private void AddVersionToBranch(ElementBranch branch, int versionNumber, bool isDir)
+        private bool AddVersionToBranch(ElementBranch branch, int versionNumber, bool isDir)
         {
             ElementVersion version;
             if (isDir)
@@ -209,7 +220,11 @@ namespace GitImporter
                     if (merge.Item1 != branch.BranchName)
                         _mergeFixups.Add(new Tuple<ElementVersion, string, int, bool>(version, merge.Item1, merge.Item2, false));
 
+            if (version.Date > _originDate)
+                return false;
+
             branch.Versions.Add(version);
+            return true;
         }
 
         private void ReadVersion(string version)
@@ -288,7 +303,10 @@ namespace GitImporter
                 element.Branches[branchName] = branch;
             }
             
-            AddVersionToBranch(branch, versionNumber, isDir);
+            bool added = AddVersionToBranch(branch, versionNumber, isDir);
+            if (!added && branch.Versions.Count == 0)
+                // do not leave an empty branch
+                element.Branches.Remove(branchName);
 
             Logger.TraceData(TraceEventType.Stop | TraceEventType.Verbose, (int)TraceId.ReadCleartool, "Stop reading version", version);            
         }
