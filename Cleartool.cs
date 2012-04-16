@@ -27,6 +27,8 @@ namespace GitImporter
         private readonly Regex _separator = new Regex("~#~");
 
         private List<string> _currentOutput = new List<string>();
+        private string _lastError;
+        private const int _nbRetry = 5;
 
         public Cleartool()
         {
@@ -85,19 +87,40 @@ namespace GitImporter
         {
             string error;
             while ((error = _process.StandardError.ReadLine()) != null)
+            {
+                _lastError = error;
                 Logger.TraceData(TraceEventType.Warning, (int)TraceId.Cleartool, error);
+            }
         }
 
         private List<string> ExecuteCommand(string cmd)
         {
-            Logger.TraceData(TraceEventType.Start | TraceEventType.Verbose, (int)TraceId.Cleartool, "Start executing cleartool command", cmd);
-            _cleartoolAvailable.Reset();
-            _process.StandardInput.WriteLine(cmd);
-            _cleartoolAvailable.Wait();
-            Logger.TraceData(TraceEventType.Stop | TraceEventType.Verbose, (int)TraceId.Cleartool, "Stop executing cleartool command", cmd);
-            var result = _currentOutput;
-            _currentOutput = new List<string>();
-            return result;
+            for (int i = 0; i < _nbRetry; i++)
+            {
+                Logger.TraceData(TraceEventType.Start | TraceEventType.Verbose, (int)TraceId.Cleartool, "Start executing cleartool command", cmd);
+                _cleartoolAvailable.Reset();
+                _lastError = null;
+                _currentOutput = new List<string>();
+                _process.StandardInput.WriteLine(cmd);
+                _cleartoolAvailable.Wait();
+                Logger.TraceData(TraceEventType.Stop | TraceEventType.Verbose, (int)TraceId.Cleartool, "Stop executing cleartool command", cmd);
+                if (_lastError != null)
+                {
+                    bool lastTry = i == _nbRetry - 1;
+                    Logger.TraceData(TraceEventType.Warning, (int)TraceId.Cleartool, "Cleartool command failed" + (!lastTry ? ", retrying" : ""), cmd);
+                    if (!lastTry)
+                        Thread.Sleep(2000);
+                }
+                else
+                {
+                    if (i > 0)
+                        Logger.TraceData(TraceEventType.Information, (int)TraceId.Cleartool, "Cleartool command succeeded on retry #" + i, cmd);
+                    var result = _currentOutput;
+                    return result;
+                }
+            }
+            Logger.TraceData(TraceEventType.Warning, (int)TraceId.Cleartool, "Cleartool command failed " + _nbRetry + " times, aborting", cmd);
+            return new List<string>();
         }
 
         public void Cd(string dir)
