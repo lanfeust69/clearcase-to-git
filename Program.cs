@@ -20,6 +20,9 @@ namespace GitImporter
 
         static void Main(string[] args)
         {
+            Console.Error.WriteLine("GitImporter called with {0} arguments :", args.Length);
+            foreach (string arg in args)
+                Console.Error.WriteLine("    " + arg);
             var importerArguments = new ImporterArguments();
             if (!CommandLine.Parser.ParseArgumentsWithUsage(args, importerArguments))
                 return;

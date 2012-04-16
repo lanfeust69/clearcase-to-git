@@ -22,7 +22,9 @@ namespace GitImporter
         private readonly Regex _directoryEntryRegex = new Regex("^===> name: \"([^\"]+)\"");
         private readonly Regex _oidRegex = new Regex(@"cataloged oid: (\S+) \(mtype \d+\)");
         private readonly Regex _symlinkRegex = new Regex("^.+ --> (.+)$");
-        private readonly Regex _mergeRegex = new Regex(@"^(""Merge@\d+@[^""]+"" (<-|->) ""[^""]+\\([\w\.]+)\\(\d+)"" )+$");
+        private readonly Regex _mergeRegex = new Regex(@"^(""Merge@\d+@[^""]+"" (<-|->) ""[^""]+\\([^\\]+)\\(\d+)"" )+$");
+
+        private readonly Regex _separator = new Regex("~#~");
 
         private List<string> _currentOutput = new List<string>();
 
@@ -153,10 +155,10 @@ namespace GitImporter
             isDir = false;
             if (!element.EndsWith("@@"))
                 element += "@@";
-            var result = ExecuteCommand("desc -fmt %On§%m \"" + element + "\"");
+            var result = ExecuteCommand("desc -fmt \"%On" + _separator + "%m\" \"" + element + "\"");
             if (result.Count == 0)
                 return null;
-            string[] parts = result[0].Split('§');
+            string[] parts = _separator.Split(result[0]);
             isDir = parts[1] == "directory element";
             return parts[0];
         }
@@ -170,10 +172,11 @@ namespace GitImporter
         {
             bool isDir = version.Element.IsDirectory;
             // not interested in directory merges
-            string format = "%Fu§%u§%Nd§%Nc§%Nl" + (isDir ? "" : "§%[hlink:Merge]p");
+            string format = "%Fu" + _separator + "%u" + _separator + "%Nd" + _separator + "%Nc" + _separator + "%Nl" +
+                (isDir ? "" : _separator + "%[hlink:Merge]p");
             // string.Join to handle multi-line comments
             string raw = string.Join("\r\n", ExecuteCommand("desc -fmt \"" + format + "\" \"" + version + "\""));
-            string[] parts = raw.Split('§');
+            string[] parts = _separator.Split(raw);
             version.AuthorName = string.Intern(parts[0]);
             version.AuthorLogin = string.Intern(parts[1]);
             version.Date = DateTime.ParseExact(parts[2], "yyyyMMdd.HHmmss", null).ToUniversalTime();
