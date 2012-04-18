@@ -54,7 +54,7 @@ namespace GitImporter
                 return false;
             }
             if (!string.IsNullOrEmpty(FetchFileContent) && ((LoadVobDB != null && LoadVobDB.Length > 0) || !string.IsNullOrEmpty(SaveVobDB) ||
-                !NoFileContent || !string.IsNullOrEmpty(DirectoriesFile) || !string.IsNullOrEmpty(ElementsFile) || !string.IsNullOrEmpty(VersionsFile) || ExportFiles.Length > 0))
+                NoFileContent || !string.IsNullOrEmpty(DirectoriesFile) || !string.IsNullOrEmpty(ElementsFile) || !string.IsNullOrEmpty(VersionsFile) || ExportFiles.Length > 0))
             {
                 Console.Error.WriteLine("FetchFileContent must be used with ClearcaseRoot and no other option");
                 return false;

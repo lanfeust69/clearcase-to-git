@@ -1,7 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
+﻿using System.Collections.Generic;
 
 namespace GitImporter
 {
@@ -40,7 +37,7 @@ namespace GitImporter
                     break;
                 }
 
-            if (object.Equals(collection, default(C)))
+            if (Equals(collection, default(C)))
             {
                 collection = new C();
                 dict.Add(new KeyValuePair<K, C>(key, collection));
@@ -61,7 +58,7 @@ namespace GitImporter
                     break;
                 }
 
-            if (object.Equals(collection, default(C)))
+            if (Equals(collection, default(C)))
                 return false;
             
             bool removed = collection.Remove(toRemove);

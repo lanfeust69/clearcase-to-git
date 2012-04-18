@@ -120,31 +120,7 @@ namespace GitImporter
                     continue;
                 }
 
-                string fileName = _cleartool.Get(namedVersion.Version.ToString());
-                var fileInfo = new FileInfo(fileName);
-                if (!fileInfo.Exists)
-                {
-                    Logger.TraceData(TraceEventType.Warning, (int)TraceId.ApplyChangeSet, "Version " + namedVersion + " could not be read from clearcase");
-                    // still create a file for later delete or rename
-                    foreach (string name in namedVersion.Names)
-                    {
-                        _writer.Write("M 644 inline " + name + "\ndata <<EOF\n");
-                        _writer.Write("// clearcase error while retrieving " + namedVersion + "\nEOF\n\n");
-                    }
-                    continue;
-                }
-                foreach (string name in namedVersion.Names)
-                {
-                    _writer.Write("M 644 inline " + name + "\ndata " + fileInfo.Length + "\n");
-                    // Flush() before using BaseStream directly
-                    _writer.Flush();
-                    using (var s = new FileStream(fileName, FileMode.Open, FileAccess.Read))
-                        s.CopyTo(_writer.BaseStream);
-                }
-                // clearcase always create as ReadOnly
-                fileInfo.IsReadOnly = false;
-                fileInfo.Delete();
-                _writer.Write("\n");
+                InlineClearcaseFileVersion(namedVersion.Version.ToString(), namedVersion.Names);
             }
 
             foreach (var label in changeSet.Labels)
@@ -156,11 +132,90 @@ namespace GitImporter
             }
         }
 
+        private void InlineClearcaseFileVersion(string version)
+        {
+            InlineClearcaseFileVersion(version, new string[] { null });
+        }
+
+        private void InlineClearcaseFileVersion(string version, IEnumerable<string> names)
+        {
+            string fileName = _cleartool.Get(version);
+            var fileInfo = new FileInfo(fileName);
+            if (!fileInfo.Exists)
+            {
+                Logger.TraceData(TraceEventType.Warning, (int)TraceId.ApplyChangeSet, "Version " + version + " could not be read from clearcase");
+                // still create a file for later delete or rename
+                foreach (string name in names)
+                {
+                    if (!string.IsNullOrEmpty(name))
+                        _writer.Write("M 644 inline " + name + "\n");
+                    _writer.Write("data <<EOF\n// clearcase error while retrieving " + version + "\nEOF\n\n");
+                }
+                return;
+            }
+            foreach (string name in names)
+            {
+                if (!string.IsNullOrEmpty(name))
+                    _writer.Write("M 644 inline " + name + "\n");
+                _writer.Write("data " + fileInfo.Length + "\n");
+                // Flush() before using BaseStream directly
+                _writer.Flush();
+                using (var s = new FileStream(fileName, FileMode.Open, FileAccess.Read))
+                    s.CopyTo(_writer.BaseStream);
+                _writer.Write("\n");
+            }
+            // clearcase always create as ReadOnly
+            fileInfo.IsReadOnly = false;
+            fileInfo.Delete();
+        }
+
         public void WriteFile(string fileName)
         {
-            _writer.Flush();
-            using (var s = new FileStream(fileName, FileMode.Open, FileAccess.Read))
-                s.CopyTo(_writer.BaseStream);
+            // we can't simply ReadLine() because of end of line discrepencies within comments
+            int c;
+            int lineNb = 0;
+            var currentLine = new List<char>(1024);
+            const string inlineFile = "data <<EOF\n";
+            int index = 0;
+            using (var s = new StreamReader(fileName))
+                while ((c = s.Read()) != -1)
+                {
+                    if (index == -1)
+                    {
+                        _writer.Write((char)c);
+                        if (c == '\n')
+                        {
+                            index = 0;
+                            lineNb++;
+                        }
+                        continue;
+                    }
+                    if (c != inlineFile[index])
+                    {
+                        foreach (char c1 in currentLine)
+                            _writer.Write(c1);
+                        _writer.Write((char)c);
+                        currentLine.Clear();
+                        index = c == '\n' ? 0 : -1;
+                        continue;
+                    }
+                    index++;
+                    currentLine.Add((char)c);
+                    if (index < inlineFile.Length)
+                        continue;
+                    // we just matched the whole "data <<EOF\n" line : next line is the version we should fetch
+                    string versionToFetch = s.ReadLine();
+                    string eof = s.ReadLine();
+                    if (eof != "EOF")
+                        throw new Exception("Error line " + lineNb + " : expecting 'EOF', reading '" + eof + "'");
+                    eof = s.ReadLine();
+                    if (eof != "")
+                        throw new Exception("Error line " + lineNb + " : expecting blank line, reading '" + eof + "'");
+                    lineNb += 4;
+                    InlineClearcaseFileVersion(versionToFetch);
+                    currentLine.Clear();
+                    index = 0;
+                }
         }
 
         public void Dispose()
