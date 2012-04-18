@@ -711,11 +711,14 @@ namespace GitImporter
                 bool ok = true;
                 foreach (var toCheck in labelInfo.Versions)
                 {
-                    if ((toCheck.VersionNumber == 0 && elementsVersions.ContainsKey(toCheck.Element)) ||
-                        (toCheck.VersionNumber != 0 && elementsVersions[toCheck.Element] != toCheck))
+                    ElementVersion inCurrentVersions;
+                    elementsVersions.TryGetValue(toCheck.Element, out inCurrentVersions);
+                    if ((inCurrentVersions == null && toCheck.VersionNumber != 0) ||
+                        (inCurrentVersions != null && inCurrentVersions != toCheck))
                     {
-                        Logger.TraceData(TraceEventType.Verbose, (int)TraceId.CreateChangeSet,
-                            "Label " + label + " is inconsistent : should be on " + toCheck + ", not on " + elementsVersions[toCheck.Element]);
+                        string msg = "Label " + label + " is inconsistent : should be on " + toCheck +
+                            (inCurrentVersions == null ? ", but element has no current version" : ", not on " + inCurrentVersions);
+                        Logger.TraceData(TraceEventType.Verbose, (int)TraceId.CreateChangeSet, msg);
                         ok = false;
                     }
                 }
