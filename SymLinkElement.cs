@@ -1,7 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using ProtoBuf;
 
 namespace GitImporter
@@ -15,11 +13,16 @@ namespace GitImporter
         public DirectoryVersion Directory { get; private set; }
         [ProtoMember(1)] private ElementVersion.Reference _directory;
 
-        public SymLinkElement(DirectoryVersion version, string name)
-            : base(version.ToString() + "\\" + name.Substring(SYMLINK.Length), false)
+        public SymLinkElement(DirectoryVersion directory, string name)
+            : base(directory + "\\" + name.Substring(SYMLINK.Length), false)
         {
             Oid = SYMLINK + Name;
+            Directory = directory;
         }
+
+        // for Protobuf deserialization
+        public SymLinkElement()
+        {}
 
         [ProtoBeforeSerialization]
         private void BeforeProtobufSerialization()
@@ -30,8 +33,7 @@ namespace GitImporter
         public void Fixup(Dictionary<string, Element> elementsByOid)
         {
             Directory = (DirectoryVersion)elementsByOid[_directory.ElementOid]
-                .Branches[_directory.BranchName]
-                .Versions.First(v => v.VersionNumber == _directory.VersionNumber);
+                .GetVersion(_directory.BranchName, _directory.VersionNumber);
         }
     }
 }

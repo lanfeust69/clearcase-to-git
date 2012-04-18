@@ -56,9 +56,15 @@ namespace GitImporter
         [ProtoAfterDeserialization]
         private void AfterProtobufDeserialization()
         {
-            Branches = _rawElementsBranches.ToDictionary(b => b.BranchName);
-            foreach (var branch in _rawElementsBranches)
-                branch.Fixup(this);
+            // no branches in SymLinkElement
+            if (_rawElementsBranches != null)
+            {
+                Branches = _rawElementsBranches.ToDictionary(b => b.BranchName);
+                foreach (var branch in _rawElementsBranches)
+                    branch.Fixup(this);
+            }
+            else
+                Branches = new Dictionary<string, ElementBranch>();
 
             _rawElementsBranches = null;
         }
