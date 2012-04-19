@@ -52,6 +52,9 @@ namespace GitImporter
                     if (namedVersion.Names.Count > 0)
                         throw new Exception("Version " + namedVersion.Version + " was named " + namedVersion.Names[0] + ", but had no entry in elementNames");
 
+                    // do not consider version 0 as orphaned (meaningful only on "main", but we don't include branches' versions 0)
+                    if (namedVersion.Version.VersionNumber == 0)
+                        continue;
                     Logger.TraceData(TraceEventType.Verbose, (int)TraceId.CreateChangeSet,
                         "Version " + namedVersion.Version + " was not yet visible in an existing directory version");
                     _orphanedVersionsByElement.AddToCollection(namedVersion.Version.Element,

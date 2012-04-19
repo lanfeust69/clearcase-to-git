@@ -102,11 +102,11 @@ namespace GitImporter
                     elementsVersions = elementsVersionsByBranch[changeSet.Branch];
                 }
 
-                foreach (var namedVersion in changeSet.Versions)
-                    changeSet.Labels.AddRange(ProcessLabels(namedVersion.Version, elementsVersions));
-
                 var changeSetBuilder = new ChangeSetBuilder(changeSet, elementsNames, elementsVersions, orphanedVersionsByElement, _roots);
                 changeSetBuilder.Build();
+
+                foreach (var namedVersion in changeSet.Versions)
+                    changeSet.Labels.AddRange(ProcessLabels(namedVersion.Version, elementsVersions));
 
                 Logger.TraceData(TraceEventType.Start | TraceEventType.Verbose, (int)TraceId.CreateChangeSet, "Stop process element names in ChangeSet", changeSet.Id);
             }
@@ -116,6 +116,15 @@ namespace GitImporter
                 foreach (var orphanedVersion in orphanedVersions)
                     Logger.TraceData(TraceEventType.Warning, (int)TraceId.CreateChangeSet,
                                      "Version " + orphanedVersion.Item2.Version + " has not been visible in any imported directory version");
+
+            // uncompleted labels
+            foreach (var label in _labels.Values)
+            {
+                foreach (var missingVersion in label.MissingVersions)
+                    Logger.TraceData(TraceEventType.Verbose, (int)TraceId.CreateChangeSet,
+                                     "Version " + missingVersion + " with label " + label.Name + " not seen");
+                Logger.TraceData(TraceEventType.Warning, (int)TraceId.CreateChangeSet, "Label " + label.Name + " has " + label.MissingVersions.Count + " missing versions : not applied");
+            }
 
             Logger.TraceData(TraceEventType.Stop | TraceEventType.Information, (int)TraceId.CreateChangeSet, "Stop process element names");
         }
@@ -148,10 +157,12 @@ namespace GitImporter
                     }
                 }
                 if (!ok)
-                    Logger.TraceData(TraceEventType.Warning, (int)TraceId.CreateChangeSet,
-                        "Label " + label + " was inconsistent : not applied");
+                    Logger.TraceData(TraceEventType.Warning, (int)TraceId.CreateChangeSet, "Label " + label + " was inconsistent : not applied");
                 else
+                {
+                    Logger.TraceData(TraceEventType.Verbose, (int)TraceId.CreateChangeSet, "Label " + label + " was applied");
                     result.Add(label);
+                }
             }
             return result;
         }

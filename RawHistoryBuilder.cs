@@ -68,8 +68,10 @@ namespace GitImporter
                     }
                     foreach (var version in branch.Versions)
                     {
-                        ElementVersion versionForLabel = version.VersionNumber == 0 && version.Branch.BranchingPoint != null
-                            ? version.Branch.BranchingPoint : version;
+                        // we don't really handle versions 0 on branches : always consider BranchingPoint
+                        ElementVersion versionForLabel = version;
+                        while (versionForLabel.VersionNumber == 0 && versionForLabel.Branch.BranchingPoint != null)
+                            versionForLabel = versionForLabel.Branch.BranchingPoint;
                         foreach (var label in version.Labels)
                         {
                             LabelInfo labelInfo;
@@ -79,7 +81,13 @@ namespace GitImporter
                                 Labels.Add(label, labelInfo);
                             }
                             labelInfo.Versions.Add(versionForLabel);
+                            // also actually "move" the label
+                            if (versionForLabel != version)
+                                versionForLabel.Labels.Add(label);
                         }
+                        // end of label move
+                        if (versionForLabel != version)
+                            version.Labels.Clear();
                         if (version.VersionNumber == 0 && (version.Element.IsDirectory || version.Branch.BranchName != "main"))
                             continue;
                         List<ChangeSet> authorChangeSets;
