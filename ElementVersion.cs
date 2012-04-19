@@ -62,6 +62,13 @@ namespace GitImporter
         public ElementVersion()
         {}
 
+        public ElementVersion GetPreviousVersion()
+        {
+            if (VersionNumber == 0)
+                return Branch.BranchingPoint; // null for "main"
+            return Branch.Versions[Branch.Versions.IndexOf(this) - 1];
+        }
+
         public override string ToString()
         {
             return Element.Name + "@@\\" + Branch.FullName + "\\" + VersionNumber;

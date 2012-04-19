@@ -87,10 +87,10 @@ namespace GitImporter
 
                 if (!importerArguments.GenerateVobDBOnly)
                 {
-                    var changeSetBuilder = new ChangeSetBuilder(vobDB);
-                    changeSetBuilder.SetRoots(importerArguments.Roots);
-                    changeSetBuilder.SetBranchFilters(importerArguments.Branches);
-                    var changeSets = changeSetBuilder.Build();
+                    var historyBuilder = new HistoryBuilder(vobDB);
+                    historyBuilder.SetRoots(importerArguments.Roots);
+                    historyBuilder.SetBranchFilters(importerArguments.Branches);
+                    var changeSets = historyBuilder.Build();
 
                     using (var gitWriter = new GitWriter(importerArguments.ClearcaseRoot, importerArguments.NoFileContent, importerArguments.IgnoreFile))
                         gitWriter.WriteChangeSets(changeSets);
