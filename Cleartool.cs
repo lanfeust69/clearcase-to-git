@@ -228,7 +228,7 @@ namespace GitImporter
         public string Get(string element)
         {
             string tmp = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
-            ExecuteCommand("get -to " + tmp + " \"" + element + "\"");
+            ExecuteCommand("get -to \"" + tmp + "\" \"" + element + "\"");
             return tmp;
         }
 

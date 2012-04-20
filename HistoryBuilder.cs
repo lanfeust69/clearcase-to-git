@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 
 namespace GitImporter
 {
@@ -21,6 +22,7 @@ namespace GitImporter
         /// </summary>
         private Dictionary<string, string> _globalBranches;
         private Dictionary<string, LabelInfo> _labels;
+        private readonly HashSet<string> _ignoredLabels = new HashSet<string>();
 
         private List<ChangeSet> _flattenChangeSets;
 
@@ -46,14 +48,16 @@ namespace GitImporter
             _flattenChangeSets = _rawHistoryBuilder.Build();
             _globalBranches = _rawHistoryBuilder.GlobalBranches;
             _labels = _rawHistoryBuilder.Labels;
-            ProcessElementNames();
-            return _flattenChangeSets;
+            return ProcessElementNames();
         }
 
-        private void ProcessElementNames()
+        private List<ChangeSet> ProcessElementNames()
         {
             Logger.TraceData(TraceEventType.Start | TraceEventType.Information, (int)TraceId.CreateChangeSet, "Start process element names");
             int n = 0;
+
+            // same content than _flattenChangeSets, but not necessarily same order
+            var result = new List<ChangeSet>(_flattenChangeSets.Count);
 
             var startedBranches = new HashSet<string>();
             var branchTips = new Dictionary<string, ChangeSet>();
@@ -64,10 +68,66 @@ namespace GitImporter
             var orphanedVersionsByElement = new Dictionary<Element, List<Tuple<string, ChangeSet.NamedVersion>>>();
             // some moves (rename) may be in separate ChangeSets, we must be able to know what version to write at the new location
             var elementsVersionsByBranch = new Dictionary<string, Dictionary<Element, ElementVersion>>();
-            foreach (var changeSet in _flattenChangeSets)
+
+            int nextChangeSetIndex = 0;
+            var delayedChangeSets = new List<Tuple<ChangeSet, HashSet<string>, List<ChangeSet>>>();
+            var delayingLabels = new Dictionary<string, int>();
+            var applyNowChangeSets = new Queue<ChangeSet>();
+            int maxDelayPerLabel = 20;
+            int maxNbDelayed = 50;
+            while (true)
             {
+                // do not delay too many times on account of the same label :
+                // it may be an inconsistent one, and holding up changeSets may prevent good labels to be applied
+                var badLabels = delayingLabels.Where(p => p.Value > maxDelayPerLabel).Select(p => p.Key).ToList();
+                foreach (var badLabel in badLabels)
+                {
+                    Logger.TraceData(TraceEventType.Warning, (int)TraceId.CreateChangeSet, "Label " + badLabel + " delayed too many change sets : ignored");
+                    _ignoredLabels.Add(badLabel);
+                    delayingLabels.Remove(badLabel);
+                }
+                foreach (var delayed in delayedChangeSets.ToList())
+                {
+                    foreach (var badLabel in badLabels)
+                        delayed.Item2.Remove(badLabel);
+                    if (delayed.Item2.Count == 0)
+                    {
+                        // no need to check dependencies here : they were in the list before, with a subset of labels
+                        applyNowChangeSets.Enqueue(delayed.Item1);
+                        delayedChangeSets.Remove(delayed);
+                    }
+                }
+
+                ChangeSet changeSet;
+                if (applyNowChangeSets.Count > 0)
+                    changeSet = applyNowChangeSets.Dequeue();
+                else if (nextChangeSetIndex == _flattenChangeSets.Count)
+                {
+                    if (delayedChangeSets.Count == 0)
+                        // done !
+                        break;
+                    foreach (var delayed in delayedChangeSets)
+                        applyNowChangeSets.Enqueue(delayed.Item1);
+                    delayedChangeSets.Clear();
+                    continue;
+                }
+                else if (delayedChangeSets.Count > maxNbDelayed)
+                {
+                    Logger.TraceData(TraceEventType.Warning, (int)TraceId.CreateChangeSet, "Too many change sets delayed : forcing");
+                    changeSet = delayedChangeSets[0].Item1;
+                    delayedChangeSets.RemoveAt(0);
+                }
+                else
+                {
+                    changeSet = _flattenChangeSets[nextChangeSetIndex++];
+                    bool delayed = DelayIfUseful(changeSet, delayedChangeSets, applyNowChangeSets, delayingLabels);
+                    if (delayed || applyNowChangeSets.Count > 0)
+                        continue;
+                }
+
                 n++;
                 changeSet.Id = n;
+                result.Add(changeSet);
                 Logger.TraceData(TraceEventType.Start | TraceEventType.Verbose, (int)TraceId.CreateChangeSet, "Start process element names in ChangeSet", changeSet);
                 if (n % 1000 == 0)
                     Logger.TraceData(TraceEventType.Information, (int)TraceId.CreateChangeSet, "Processing element names in ChangeSet", changeSet);
@@ -105,8 +165,30 @@ namespace GitImporter
                 var changeSetBuilder = new ChangeSetBuilder(changeSet, elementsNames, elementsVersions, orphanedVersionsByElement, _roots);
                 changeSetBuilder.Build();
 
+                var finishedLabels = new HashSet<string>();
                 foreach (var namedVersion in changeSet.Versions)
-                    changeSet.Labels.AddRange(ProcessLabels(namedVersion.Version, elementsVersions));
+                    changeSet.Labels.AddRange(ProcessLabels(namedVersion.Version, elementsVersions, finishedLabels));
+                // maybe some delayed changeSets are available now (iterate on a copy to be able to remove)
+                if (finishedLabels.Count > 0)
+                {
+                    foreach (var label in finishedLabels)
+                    {
+                        delayingLabels.Remove(label);
+                        _ignoredLabels.Remove(label);
+                    }
+
+                    foreach (var delayed in delayedChangeSets.ToList())
+                    {
+                        foreach (string label in finishedLabels)
+                            delayed.Item2.Remove(label);
+                        if (delayed.Item2.Count == 0)
+                        {
+                            // no need to check dependencies here : they were in the list before, with a subset of labels
+                            applyNowChangeSets.Enqueue(delayed.Item1);
+                            delayedChangeSets.Remove(delayed);
+                        }
+                    }
+                }
 
                 Logger.TraceData(TraceEventType.Start | TraceEventType.Verbose, (int)TraceId.CreateChangeSet, "Stop process element names in ChangeSet", changeSet.Id);
             }
@@ -127,9 +209,90 @@ namespace GitImporter
             }
 
             Logger.TraceData(TraceEventType.Stop | TraceEventType.Information, (int)TraceId.CreateChangeSet, "Stop process element names");
+            
+            return result;
         }
 
-        private IEnumerable<string> ProcessLabels(ElementVersion version, Dictionary<Element, ElementVersion> elementsVersions)
+        private bool DelayIfUseful(ChangeSet changeSet,
+            List<Tuple<ChangeSet, HashSet<string>, List<ChangeSet>>> delayedChangeSets,
+            Queue<ChangeSet> applyNowChangeSets, Dictionary<string, int> delayingLabels)
+        {
+            var changedBranches = new HashSet<ElementBranch>(changeSet.Versions.Select(v => v.Version.Branch));
+            var branchingPoints = changeSet.Versions
+                .Where(v => v.Version.VersionNumber == 0 && v.Version.Branch.BranchingPoint != null)
+                .Select(v => v.Version.Branch.BranchingPoint).ToList();
+
+            // dependencies are versions on the same branch, or the branching point of a version 0
+            var dependencies = delayedChangeSets
+                .Where(delayed => delayed.Item1.Versions.Select(v => v.Version)
+                            .Any(v =>
+                                changedBranches.Contains(v.Branch) ||
+                                branchingPoints.Any(bp => bp.Branch == v.Branch && bp.VersionNumber >= v.VersionNumber)))
+                .ToList();
+
+            var wouldBreakLabels = new HashSet<string>(dependencies.SelectMany(d => d.Item2).Union(FindWouldBreakLabels(changeSet)));
+
+            if (dependencies.Count == 0 && wouldBreakLabels.Count == 0)
+                return false;
+
+            // if any waiting label is on one of the currenty changeSet's versions, apply it (and the dependencies)
+            // TODO : this may not be optimal
+            if (changeSet.Versions.SelectMany(v => v.Version.Labels)
+                .Any(label => delayingLabels.ContainsKey(label) || wouldBreakLabels.Contains(label)))
+            {
+                Logger.TraceData(TraceEventType.Verbose, (int)TraceId.CreateChangeSet, "ChangeSet " + changeSet + " needed for a waiting label : not delayed");
+                var allDependencies = GetAllDependencies(dependencies.Select(d => d.Item1), delayedChangeSets.ToDictionary(t => t.Item1, t => t.Item3));
+                // loop again over delayedChangeSets to keep correct order
+                foreach (var dependency in delayedChangeSets.ToList())
+                    if (allDependencies.Contains(dependency.Item1))
+                    {
+                        applyNowChangeSets.Enqueue(dependency.Item1);
+                        delayedChangeSets.Remove(dependency);
+                    }
+                applyNowChangeSets.Enqueue(changeSet);
+            }
+            else
+            {
+                Logger.TraceData(TraceEventType.Verbose, (int)TraceId.CreateChangeSet,
+                    "ChangeSet " + changeSet + " delayed for labels " + string.Join(", ", wouldBreakLabels));
+                delayedChangeSets.Add(new Tuple<ChangeSet, HashSet<string>, List<ChangeSet>>(changeSet, wouldBreakLabels, dependencies.Select(d => d.Item1).ToList()));
+                foreach (var label in wouldBreakLabels)
+                {
+                    int count;
+                    delayingLabels.TryGetValue(label, out count);
+                    delayingLabels[label] = count + 1;
+                }
+            }
+
+            return true;
+        }
+
+        private static HashSet<ChangeSet> GetAllDependencies(IEnumerable<ChangeSet> dependencies, Dictionary<ChangeSet, List<ChangeSet>> changeSets)
+        {
+            var result = new HashSet<ChangeSet>(dependencies);
+            foreach (var dependency in dependencies)
+            {
+                List<ChangeSet> subDependencies;
+                if (!changeSets.TryGetValue(dependency, out subDependencies))
+                    continue;
+                changeSets.Remove(dependency);
+                foreach (var subDependency in GetAllDependencies(subDependencies, changeSets))
+                    result.Add(subDependency);
+            }
+
+            return result;
+        }
+
+        private IEnumerable<string> FindWouldBreakLabels(ChangeSet changeSet)
+        {
+            return changeSet.Versions
+                .Select(v => v.Version).Where(v => v.VersionNumber > 0)
+                .SelectMany(v => v.GetPreviousVersion().Labels)
+                .Where(label => _labels.ContainsKey(label) && !_ignoredLabels.Contains(label));
+        }
+
+        private IEnumerable<string> ProcessLabels(ElementVersion version,
+            Dictionary<Element, ElementVersion> elementsVersions, HashSet<string> finishedLabels)
         {
             var result = new List<string>();
             foreach (var label in version.Labels)
@@ -142,6 +305,7 @@ namespace GitImporter
                     continue;
                 // so we removed the last missing version, check that everything is still OK
                 _labels.Remove(label);
+                finishedLabels.Add(label);
                 bool ok = true;
                 foreach (var toCheck in labelInfo.Versions)
                 {
