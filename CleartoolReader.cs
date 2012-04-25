@@ -25,7 +25,7 @@ namespace GitImporter
         public CleartoolReader(string clearcaseRoot, string originDate)
         {
             _cleartool.Cd(clearcaseRoot);
-            _originDate = DateTime.Parse(originDate).ToUniversalTime();
+            _originDate = string.IsNullOrEmpty(originDate) ? DateTime.UtcNow : DateTime.Parse(originDate).ToUniversalTime();
         }
 
         public VobDB VobDB { get { return new VobDB(ElementsByOid); } }
@@ -196,7 +196,7 @@ namespace GitImporter
                         dirVersion.Content.Add(new KeyValuePair<string, Element>(child.Key, childElement));
                     else if (child.Value.StartsWith(SymLinkElement.SYMLINK))
                     {
-                        var symLink = new SymLinkElement(dirVersion, child.Value);
+                        var symLink = new SymLinkElement(branch.Element, child.Value);
                         ElementsByOid.Add(symLink.Oid, symLink);
                         dirVersion.Content.Add(new KeyValuePair<string, Element>(child.Key, symLink));
                     }
@@ -221,7 +221,11 @@ namespace GitImporter
                         _mergeFixups.Add(new Tuple<ElementVersion, string, int, bool>(version, merge.Item1, merge.Item2, false));
 
             if (version.Date > _originDate)
+            {
+                Logger.TraceData(TraceEventType.Information, (int)TraceId.ReadCleartool,
+                    string.Format("Skipping version {0} : {1} > {2}", version, version.Date, _originDate));
                 return false;
+            }
 
             branch.Versions.Add(version);
             return true;
@@ -254,7 +258,7 @@ namespace GitImporter
             {
                 // the element is now seen with a different name in the currently used view
                 Logger.TraceData(TraceEventType.Information, (int)TraceId.ReadCleartool,
-                    string.Format("element with oid {0} has a different name : now using {1}instead of {2}", oid, elementName, element.Name));
+                    string.Format("element with oid {0} has a different name : now using {1} instead of {2}", oid, elementName, element.Name));
                 element.Name = elementName;
             }
             string[] versionPath = match.Groups[2].Value.Split(new[] { '\\' }, StringSplitOptions.RemoveEmptyEntries);

@@ -70,12 +70,7 @@ namespace GitImporter
             _writer.Write("commit refs/heads/" + branchName + "\n");
             _writer.Write("mark :" + changeSet.Id + "\n");
             _writer.Write("committer " + changeSet.AuthorName + " <" + changeSet.AuthorLogin + "> " + (changeSet.StartTime - _epoch).TotalSeconds + " +0200\n");
-            string comment = changeSet.GetComment();
-            byte[] encoded = Encoding.UTF8.GetBytes(comment);
-            _writer.Write("data " + encoded.Length + "\n");
-            _writer.Flush();
-            _writer.BaseStream.Write(encoded, 0, encoded.Length);
-            _writer.Write("\n");
+            InlineString(changeSet.GetComment());
             if (changeSet.BranchingPoint != null)
                 _writer.Write("from :" + changeSet.BranchingPoint.Id + "\n");
             foreach (var merge in changeSet.Merges)
@@ -103,6 +98,12 @@ namespace GitImporter
             foreach (var removed in changeSet.Removed)
                 _writer.Write("D " + removed + "\n");
 
+            foreach (var symLink in changeSet.SymLinks)
+            {
+                _writer.Write("M 120000 inline " + symLink.Item1 + "\n");
+                InlineString(symLink.Item2);
+            }
+
             foreach (var namedVersion in changeSet.Versions)
             {
                 if (namedVersion.Version is DirectoryVersion || namedVersion.Names.Count == 0)
@@ -116,6 +117,7 @@ namespace GitImporter
                         if (isEmptyFile)
                             _writer.Write("M 644 inline " + name + "\ndata 0\n\n");
                         else
+                            // don't use InlineString here, so that /FetchFileContent is easy to implement
                             _writer.Write("M 644 inline " + name + "\ndata <<EOF\n" + namedVersion.Version + "\nEOF\n\n");
                     continue;
                 }
@@ -130,6 +132,15 @@ namespace GitImporter
                 _writer.Write("tagger Unknown <unknown> " + (changeSet.StartTime - _epoch).TotalSeconds + " +0200\n");
                 _writer.Write("data 0\n\n");
             }
+        }
+
+        private void InlineString(string data)
+        {
+            byte[] encoded = Encoding.UTF8.GetBytes(data);
+            _writer.Write("data " + encoded.Length + "\n");
+            _writer.Flush();
+            _writer.BaseStream.Write(encoded, 0, encoded.Length);
+            _writer.Write("\n");
         }
 
         private void InlineClearcaseFileVersion(string version)
@@ -149,7 +160,7 @@ namespace GitImporter
                 {
                     if (!string.IsNullOrEmpty(name))
                         _writer.Write("M 644 inline " + name + "\n");
-                    _writer.Write("data <<EOF\n// clearcase error while retrieving " + version + "\nEOF\n\n");
+                    InlineString("// clearcase error while retrieving " + version);
                 }
                 return;
             }

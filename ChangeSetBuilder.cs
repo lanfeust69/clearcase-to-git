@@ -181,7 +181,7 @@ namespace GitImporter
             var removedElementsNames = new Dictionary<Element, HashSet<string>>();
             foreach (var pair in removedElements)
             {
-                if (!_elementsVersions.ContainsKey(pair.Key))
+                if (!(pair.Key is SymLinkElement) && !_elementsVersions.ContainsKey(pair.Key))
                 {
                     Logger.TraceData(TraceEventType.Information, (int)TraceId.CreateChangeSet,
                                      "Element " + pair.Key + " was removed (or renamed) before any actual version was committed");
@@ -298,6 +298,12 @@ namespace GitImporter
 
         private void AddElement(Element element, string baseName, string name)
         {
+            if (baseName != null && element is SymLinkElement)
+            {
+                // no versions for SymLinkElement
+                _changeSet.SymLinks.Add(new Tuple<string, string>(baseName + name, ((SymLinkElement)element).Target.Replace("\\", "/")));
+                return;
+            }
             ElementVersion currentVersion;
             if (!_elementsVersions.TryGetValue(element, out currentVersion))
                 // assumed to be (empty) version 0

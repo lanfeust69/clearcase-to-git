@@ -303,6 +303,7 @@ namespace GitImporter
                 labelInfo.MissingVersions.Remove(version);
                 if (labelInfo.MissingVersions.Count > 0)
                     continue;
+                Logger.TraceData(TraceEventType.Verbose, (int)TraceId.CreateChangeSet, "Label " + label + " completed with version " + version);
                 // so we removed the last missing version, check that everything is still OK
                 _labels.Remove(label);
                 finishedLabels.Add(label);

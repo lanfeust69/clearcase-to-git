@@ -10,14 +10,18 @@ namespace GitImporter
     {
         public const string SYMLINK = "symlink:";
 
-        public DirectoryVersion Directory { get; private set; }
-        [ProtoMember(1)] private ElementVersion.Reference _directory;
+        public Element Directory { get; private set; }
+        [ProtoMember(1, AsReference = true)] private string _directoryOid;
 
-        public SymLinkElement(DirectoryVersion directory, string name)
+        [ProtoMember(2, AsReference = true)]
+        public string Target { get; private set; }
+
+        public SymLinkElement(Element directory, string name)
             : base(directory + "\\" + name.Substring(SYMLINK.Length), false)
         {
             Oid = SYMLINK + Name;
             Directory = directory;
+            Target = name.Substring(SYMLINK.Length);
         }
 
         // for Protobuf deserialization
@@ -27,13 +31,12 @@ namespace GitImporter
         [ProtoBeforeSerialization]
         private void BeforeProtobufSerialization()
         {
-            _directory = new ElementVersion.Reference(Directory);
+            _directoryOid = Directory.Oid;
         }
 
         public void Fixup(Dictionary<string, Element> elementsByOid)
         {
-            Directory = (DirectoryVersion)elementsByOid[_directory.ElementOid]
-                .GetVersion(_directory.BranchName, _directory.VersionNumber);
+            Directory = elementsByOid[_directoryOid];
         }
     }
 }
