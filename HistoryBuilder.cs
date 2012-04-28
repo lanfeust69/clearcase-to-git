@@ -22,9 +22,10 @@ namespace GitImporter
         /// </summary>
         private Dictionary<string, string> _globalBranches;
         private Dictionary<string, LabelInfo> _labels;
-        private readonly HashSet<string> _ignoredLabels = new HashSet<string>();
 
         private List<ChangeSet> _flattenChangeSets;
+        private int _currentIndex = 0;
+        private HashSet<string> _startedBranches = new HashSet<string>();
 
         public HistoryBuilder(VobDB vobDB)
         {
@@ -59,7 +60,6 @@ namespace GitImporter
             // same content than _flattenChangeSets, but not necessarily same order
             var result = new List<ChangeSet>(_flattenChangeSets.Count);
 
-            var startedBranches = new HashSet<string>();
             var branchTips = new Dictionary<string, ChangeSet>();
             // an element may appear under different names, especially during a move,
             // if the destination directory has been checked in before source directory
@@ -69,63 +69,25 @@ namespace GitImporter
             // some moves (rename) may be in separate ChangeSets, we must be able to know what version to write at the new location
             var elementsVersionsByBranch = new Dictionary<string, Dictionary<Element, ElementVersion>>();
 
-            int nextChangeSetIndex = 0;
-            var delayedChangeSets = new List<Tuple<ChangeSet, HashSet<string>, List<ChangeSet>>>();
-            var delayingLabels = new Dictionary<string, int>();
             var applyNowChangeSets = new Queue<ChangeSet>();
-            int maxDelayPerLabel = 20;
-            int maxNbDelayed = 50;
+
             while (true)
             {
-                // do not delay too many times on account of the same label :
-                // it may be an inconsistent one, and holding up changeSets may prevent good labels to be applied
-                var badLabels = delayingLabels.Where(p => p.Value > maxDelayPerLabel).Select(p => p.Key).ToList();
-                foreach (var badLabel in badLabels)
-                {
-                    Logger.TraceData(TraceEventType.Warning, (int)TraceId.CreateChangeSet, "Label " + badLabel + " delayed too many change sets : ignored");
-                    _ignoredLabels.Add(badLabel);
-                    delayingLabels.Remove(badLabel);
-                }
-                foreach (var delayed in delayedChangeSets.ToList())
-                {
-                    foreach (var badLabel in badLabels)
-                        delayed.Item2.Remove(badLabel);
-                    if (delayed.Item2.Count == 0)
-                    {
-                        // no need to check dependencies here : they were in the list before, with a subset of labels
-                        applyNowChangeSets.Enqueue(delayed.Item1);
-                        delayedChangeSets.Remove(delayed);
-                    }
-                }
-
                 ChangeSet changeSet;
                 if (applyNowChangeSets.Count > 0)
                     changeSet = applyNowChangeSets.Dequeue();
-                else if (nextChangeSetIndex == _flattenChangeSets.Count)
-                {
-                    if (delayedChangeSets.Count == 0)
-                        // done !
-                        break;
-                    foreach (var delayed in delayedChangeSets)
-                        applyNowChangeSets.Enqueue(delayed.Item1);
-                    delayedChangeSets.Clear();
-                    continue;
-                }
-                else if (delayedChangeSets.Count > maxNbDelayed)
-                {
-                    Logger.TraceData(TraceEventType.Warning, (int)TraceId.CreateChangeSet, "Too many change sets delayed : forcing");
-                    changeSet = delayedChangeSets[0].Item1;
-                    delayedChangeSets.RemoveAt(0);
-                }
                 else
                 {
-                    changeSet = _flattenChangeSets[nextChangeSetIndex++];
-                    bool delayed = DelayIfUseful(changeSet, delayedChangeSets, applyNowChangeSets, delayingLabels);
-                    if (delayed || applyNowChangeSets.Count > 0)
-                        continue;
+                    applyNowChangeSets = new Queue<ChangeSet>(FindNextChangeSets());
+                    if (applyNowChangeSets.Count > 0)
+                        changeSet = applyNowChangeSets.Dequeue();
+                    else
+                        // done !
+                        break;
                 }
 
                 n++;
+                // n is 1-based index because it is used as a mark id for git fast-import, that reserves id 0
                 changeSet.Id = n;
                 result.Add(changeSet);
                 Logger.TraceData(TraceEventType.Start | TraceEventType.Verbose, (int)TraceId.CreateChangeSet, "Start process element names in ChangeSet", changeSet);
@@ -135,10 +97,9 @@ namespace GitImporter
                 branchTips[changeSet.Branch] = changeSet;
                 Dictionary<Element, HashSet<string>> elementsNames;
                 Dictionary<Element, ElementVersion> elementsVersions;
-                bool isNewBranch = !startedBranches.Contains(changeSet.Branch);
+                bool isNewBranch = !_startedBranches.Contains(changeSet.Branch);
                 if (isNewBranch)
                 {
-                    // n is 1-based index because it is used as a mark id for git fast-import, that reserves id 0
                     if (changeSet.Branch != "main")
                     {
                         string parentBranch = _globalBranches[changeSet.Branch];
@@ -154,7 +115,7 @@ namespace GitImporter
                     }
                     elementsNamesByBranch.Add(changeSet.Branch, elementsNames);
                     elementsVersionsByBranch.Add(changeSet.Branch, elementsVersions);
-                    startedBranches.Add(changeSet.Branch);
+                    _startedBranches.Add(changeSet.Branch);
                 }
                 else
                 {
@@ -168,27 +129,6 @@ namespace GitImporter
                 var finishedLabels = new HashSet<string>();
                 foreach (var namedVersion in changeSet.Versions)
                     changeSet.Labels.AddRange(ProcessLabels(namedVersion.Version, elementsVersions, finishedLabels));
-                // maybe some delayed changeSets are available now (iterate on a copy to be able to remove)
-                if (finishedLabels.Count > 0)
-                {
-                    foreach (var label in finishedLabels)
-                    {
-                        delayingLabels.Remove(label);
-                        _ignoredLabels.Remove(label);
-                    }
-
-                    foreach (var delayed in delayedChangeSets.ToList())
-                    {
-                        foreach (string label in finishedLabels)
-                            delayed.Item2.Remove(label);
-                        if (delayed.Item2.Count == 0)
-                        {
-                            // no need to check dependencies here : they were in the list before, with a subset of labels
-                            applyNowChangeSets.Enqueue(delayed.Item1);
-                            delayedChangeSets.Remove(delayed);
-                        }
-                    }
-                }
 
                 Logger.TraceData(TraceEventType.Start | TraceEventType.Verbose, (int)TraceId.CreateChangeSet, "Stop process element names in ChangeSet", changeSet.Id);
             }
@@ -213,82 +153,210 @@ namespace GitImporter
             return result;
         }
 
-        private bool DelayIfUseful(ChangeSet changeSet,
-            List<Tuple<ChangeSet, HashSet<string>, List<ChangeSet>>> delayedChangeSets,
-            Queue<ChangeSet> applyNowChangeSets, Dictionary<string, int> delayingLabels)
+        private IEnumerable<ChangeSet> FindNextChangeSets()
         {
-            var changedBranches = new HashSet<ElementBranch>(changeSet.Versions.Select(v => v.Version.Branch));
-            var branchingPoints = changeSet.Versions
-                .Where(v => v.Version.VersionNumber == 0 && v.Version.Branch.BranchingPoint != null)
-                .Select(v => v.Version.Branch.BranchingPoint).ToList();
+            ChangeSet changeSet = null;
+            while (changeSet == null)
+                if (_currentIndex < _flattenChangeSets.Count)
+                    changeSet = _flattenChangeSets[_currentIndex++];
+                else
+                    return new ChangeSet[0];
+            
+            // stay on current : maybe we won't return changeSet, so we will need to process it next time
+            _currentIndex--;
 
-            // dependencies are versions on the same branch, or the branching point of a version 0
-            var dependencies = delayedChangeSets
-                .Where(delayed => delayed.Item1.Versions.Select(v => v.Version)
-                            .Any(v =>
-                                changedBranches.Contains(v.Branch) ||
-                                branchingPoints.Any(bp => bp.Branch == v.Branch && bp.VersionNumber >= v.VersionNumber)))
-                .ToList();
-
-            var wouldBreakLabels = new HashSet<string>(dependencies.SelectMany(d => d.Item2).Union(FindWouldBreakLabels(changeSet)));
-
-            if (dependencies.Count == 0 && wouldBreakLabels.Count == 0)
-                return false;
-
-            // if any waiting label is on one of the currenty changeSet's versions, apply it (and the dependencies)
-            // TODO : this may not be optimal
-            if (changeSet.Versions.SelectMany(v => v.Version.Labels)
-                .Any(label => delayingLabels.ContainsKey(label) || wouldBreakLabels.Contains(label)))
+            var wouldBreakLabels = FindWouldBreakLabels(changeSet);
+            if (wouldBreakLabels.Count == 0)
             {
-                Logger.TraceData(TraceEventType.Verbose, (int)TraceId.CreateChangeSet, "ChangeSet " + changeSet + " needed for a waiting label : not delayed");
-                var allDependencies = GetAllDependencies(dependencies.Select(d => d.Item1), delayedChangeSets.ToDictionary(t => t.Item1, t => t.Item3));
-                // loop again over delayedChangeSets to keep correct order
-                foreach (var dependency in delayedChangeSets.ToList())
-                    if (allDependencies.Contains(dependency.Item1))
-                    {
-                        applyNowChangeSets.Enqueue(dependency.Item1);
-                        delayedChangeSets.Remove(dependency);
-                    }
-                applyNowChangeSets.Enqueue(changeSet);
+                _flattenChangeSets[_currentIndex++] = null;
+                return new[] { changeSet };
             }
-            else
+            // we look for a label that could be completed with changeSets within the next four hours
+            foreach (var pair in wouldBreakLabels)
             {
-                Logger.TraceData(TraceEventType.Verbose, (int)TraceId.CreateChangeSet,
-                    "ChangeSet " + changeSet + " delayed for labels " + string.Join(", ", wouldBreakLabels));
-                delayedChangeSets.Add(new Tuple<ChangeSet, HashSet<string>, List<ChangeSet>>(changeSet, wouldBreakLabels, dependencies.Select(d => d.Item1).ToList()));
-                foreach (var label in wouldBreakLabels)
+                int index = _currentIndex;
+                string label = pair.Item1;
+                string branch = pair.Item2;
+                var labelInfo = _labels[label];
+                HashSet<ElementVersion> missingVersions;
+                if (!labelInfo.MissingVersions.TryGetValue(branch, out missingVersions))
                 {
-                    int count;
-                    delayingLabels.TryGetValue(label, out count);
-                    delayingLabels[label] = count + 1;
+                    // this means we would break a spawning branch : we simply look for the first ChangeSet on this branch
+                    ChangeSet spawningPoint = FindBranchToSpawn(labelInfo, branch);
+                    Logger.TraceData(TraceEventType.Information, (int)TraceId.CreateChangeSet,
+                        string.Format("Applying {0} before {1} to start branch {2}", spawningPoint, changeSet, spawningPoint.Branch));
+                    return new[] { spawningPoint };
+                }
+                // we are only interested in missing versions on branch associated with the label as broken
+                // versions on parent branch are OK (else we would already have failed),
+                // versions on children branches will be handled later (when the branch spawns)
+                missingVersions = new HashSet<ElementVersion>(missingVersions);
+                var lastVersion = missingVersions.OrderBy(v => v.Date.Ticks).Last();
+                if ((lastVersion.Date - changeSet.FinishTime).TotalHours > 4.0)
+                {
+                    Logger.TraceData(TraceEventType.Warning, (int)TraceId.CreateChangeSet,
+                        string.Format("Label {0} broken at {1}, missing version {2} ({3}) is too late : not applied", label, changeSet, lastVersion, lastVersion.Date));
+                    _labels.Remove(label);
+                    continue;
+                }
+                var neededChangeSets = new HashSet<int>();
+                while (missingVersions.Count > 0 && index < _flattenChangeSets.Count)
+                {
+                    var toCheck = _flattenChangeSets[index++];
+                    if (toCheck == null || toCheck.Branch != branch)
+                        continue;
+                    foreach (var version in toCheck.Versions)
+                        if (missingVersions.Contains(version.Version))
+                        {
+                            neededChangeSets.Add(index - 1);
+                            missingVersions.Remove(version.Version);
+                        }
+                }
+                if (missingVersions.Count > 0)
+                    throw new Exception("Label " + label + " could not be completed : versions " +
+                        string.Join(", ", missingVersions.Select(v => v.ToString())) + " not in any further ChangeSet on branch " + changeSet.Branch);
+
+                bool isLabelConsistent = ProcessDependenciesAndCheckLabelConsistency(neededChangeSets, label, index);
+                if (!isLabelConsistent)
+                {
+                    Logger.TraceData(TraceEventType.Warning, (int)TraceId.CreateChangeSet, "Label " + label + " broken at " + changeSet + " : not applied");
+                    _labels.Remove(label);
+                    continue;
+                }
+                // everything is OK : applying all neededChangeSets will complete label for this branch
+                var result = new List<ChangeSet>();
+                foreach (int i in neededChangeSets.OrderBy(i => i))
+                {
+                    result.Add(_flattenChangeSets[i]);
+                    _flattenChangeSets[i] = null;
+                }
+                Logger.TraceData(TraceEventType.Information, (int)TraceId.CreateChangeSet,
+                    string.Format("Applying {0} ChangeSets before {1} to complete label {2}", result.Count, changeSet, label));
+                return result;
+            }
+            // too bad, no WouldBeBroken label can be completed, simply go on
+            _flattenChangeSets[_currentIndex++] = null;
+            return new[] { changeSet };
+        }
+
+        private ChangeSet FindBranchToSpawn(LabelInfo labelInfo, string branch)
+        {
+            string missingBranch = null;
+            foreach (var key in labelInfo.MissingVersions.Keys)
+            {
+                missingBranch = key;
+                while (missingBranch != null && !_startedBranches.Contains(missingBranch) &&
+                       _globalBranches[missingBranch] != branch)
+                    missingBranch = _globalBranches[missingBranch];
+                if (missingBranch != null && !_startedBranches.Contains(missingBranch) && _globalBranches[missingBranch] == branch)
+                    // found it !
+                    break;
+                missingBranch = null;
+            }
+            if (missingBranch == null)
+                throw new Exception("Could not find missing branch of " + labelInfo.Name + " leading to " + branch);
+            for (int i = _currentIndex; i < _flattenChangeSets.Count; i++)
+                if (_flattenChangeSets[i] != null && _flattenChangeSets[i].Branch == missingBranch)
+                {
+                    var result = _flattenChangeSets[i];
+                    _flattenChangeSets[i] = null;
+                    return result;
+                }
+            throw new Exception("Could not find spawning ChangeSet of " + missingBranch);
+        }
+
+        private bool ProcessDependenciesAndCheckLabelConsistency(HashSet<int> neededChangeSets, string label, int index)
+        {
+            var allNewVersions = neededChangeSets.Select(i => _flattenChangeSets[i])
+                .SelectMany(c => c.Versions).Select(v => v.Version)
+                .GroupBy(v => v.Element).ToDictionary(g => g.Key, g => new List<ElementVersion>(g));
+            // process backwards to get dependencies of dependencies
+            // this may include ChangeSets on a parent branch
+            bool isLabelConsistent = true;
+            for (int i = index - 1; i >= _currentIndex; i--)
+            {
+                var toCheck = _flattenChangeSets[i];
+                if (toCheck == null)
+                    continue;
+                if (neededChangeSets.Contains(i))
+                {
+                    if (FindWouldBreakLabels(toCheck).Any(l => l.Item1 == label))
+                    {
+                        isLabelConsistent = false;
+                        break;
+                    }
+                    continue;
+                }
+                if (!toCheck.Versions.Select(v => v.Version)
+                         .Any(v =>
+                         {
+                             List<ElementVersion> l;
+                             return allNewVersions.TryGetValue(v.Element, out l) && l.Any(v.IsAncestorOf);
+                         }))
+                    continue;
+                if (FindWouldBreakLabels(toCheck).Any(l => l.Item1 == label))
+                {
+                    isLabelConsistent = false;
+                    break;
+                }
+                neededChangeSets.Add(i);
+                foreach (var version in toCheck.Versions.Select(v => v.Version))
+                    allNewVersions.AddToCollection(version.Element, version);
+            }
+            return isLabelConsistent;
+        }
+
+        private HashSet<Tuple<string, string>> FindWouldBreakLabels(ChangeSet changeSet)
+        {
+            var result = new HashSet<Tuple<string, string>>();
+            if (!_startedBranches.Contains(changeSet.Branch))
+            {
+                // then we would break any label on this new branch that is not complete on all parent branches
+                string parentBranch = _globalBranches[changeSet.Branch];
+                while (parentBranch != null)
+                {
+                    foreach (var labelInfo in _labels.Values
+                        .Where(l => l.MissingVersions.ContainsKey(changeSet.Branch) && l.MissingVersions.ContainsKey(parentBranch)))
+                        result.Add(new Tuple<string, string>(labelInfo.Name, parentBranch));
+                    parentBranch = _globalBranches[parentBranch];
                 }
             }
-
-            return true;
-        }
-
-        private static HashSet<ChangeSet> GetAllDependencies(IEnumerable<ChangeSet> dependencies, Dictionary<ChangeSet, List<ChangeSet>> changeSets)
-        {
-            var result = new HashSet<ChangeSet>(dependencies);
-            foreach (var dependency in dependencies)
-            {
-                List<ChangeSet> subDependencies;
-                if (!changeSets.TryGetValue(dependency, out subDependencies))
-                    continue;
-                changeSets.Remove(dependency);
-                foreach (var subDependency in GetAllDependencies(subDependencies, changeSets))
-                    result.Add(subDependency);
-            }
+            foreach (var label in changeSet.Versions
+                .Select(v =>
+                    {
+                        var prev = v.Version.GetPreviousVersion();
+                        while (prev != null && prev.VersionNumber == 0)
+                            prev = prev.GetPreviousVersion();
+                        return prev;
+                    })
+                .Where(v => v != null)
+                .SelectMany(v => v.Labels
+                                .Where(label =>
+                                           {
+                                               LabelInfo labelInfo;
+                                               if (!_labels.TryGetValue(label, out labelInfo))
+                                                   return false;
+                                               // if changeSet.Branch is not "finished" for the label -> broken
+                                               if (labelInfo.MissingVersions.ContainsKey(changeSet.Branch))
+                                                   return true;
+                                               // ok if all branches starting from changeSet.Branch on which the label exists are started
+                                               foreach (var branch in labelInfo.MissingVersions.Keys)
+                                               {
+                                                   var missingBranch = branch;
+                                                   while (missingBranch != null && !_startedBranches.Contains(missingBranch))
+                                                   {
+                                                       var parent = _globalBranches[missingBranch];
+                                                       if (parent == changeSet.Branch)
+                                                           // we need to spawn missingBranch before applying changeSet
+                                                           return true;
+                                                       missingBranch = parent;
+                                                   }
+                                               }
+                                               return false;
+                                           })))
+                result.Add(new Tuple<string, string>(label, changeSet.Branch));
 
             return result;
-        }
-
-        private IEnumerable<string> FindWouldBreakLabels(ChangeSet changeSet)
-        {
-            return changeSet.Versions
-                .Select(v => v.Version).Where(v => v.VersionNumber > 0)
-                .SelectMany(v => v.GetPreviousVersion().Labels)
-                .Where(label => _labels.ContainsKey(label) && !_ignoredLabels.Contains(label));
         }
 
         private IEnumerable<string> ProcessLabels(ElementVersion version,
@@ -300,7 +368,7 @@ namespace GitImporter
                 LabelInfo labelInfo;
                 if (!_labels.TryGetValue(label, out labelInfo))
                     continue;
-                labelInfo.MissingVersions.Remove(version);
+                labelInfo.MissingVersions.RemoveFromCollection(version.Branch.BranchName, version);
                 if (labelInfo.MissingVersions.Count > 0)
                     continue;
                 Logger.TraceData(TraceEventType.Verbose, (int)TraceId.CreateChangeSet, "Label " + label + " completed with version " + version);

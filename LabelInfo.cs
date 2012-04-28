@@ -7,7 +7,7 @@ namespace GitImporter
     {
         public string Name { get; private set; }
         public List<ElementVersion> Versions { get; private set; }
-        public HashSet<ElementVersion> MissingVersions { get; private set; }
+        public Dictionary<string, HashSet<ElementVersion>> MissingVersions { get; private set; }
 
         public LabelInfo(string name)
         {
@@ -17,7 +17,9 @@ namespace GitImporter
 
         public void Reset()
         {
-            MissingVersions = new HashSet<ElementVersion>(Versions.Where(v => v.VersionNumber != 0));
+            MissingVersions = Versions.Where(v => v.VersionNumber != 0)
+                .GroupBy(v => v.Branch.BranchName)
+                .ToDictionary(g => g.Key, g => new HashSet<ElementVersion>(g));
         }
     }
 }

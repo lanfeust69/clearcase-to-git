@@ -69,6 +69,17 @@ namespace GitImporter
             return Branch.Versions[Branch.Versions.IndexOf(this) - 1];
         }
 
+        public bool IsAncestorOf(ElementVersion version)
+        {
+            if (Element != version.Element)
+                return false;
+            if (Branch == version.Branch)
+                return VersionNumber < version.VersionNumber;
+            if (version.Branch.BranchingPoint != null)
+                return IsAncestorOf(version.Branch.BranchingPoint);
+            return false;
+        }
+
         public override string ToString()
         {
             return Element.Name + "@@\\" + Branch.FullName + "\\" + VersionNumber;
