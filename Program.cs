@@ -40,7 +40,16 @@ namespace GitImporter
                 if (!string.IsNullOrEmpty(importerArguments.FetchFileContent))
                 {
                     using (var gitWriter = new GitWriter(importerArguments.ClearcaseRoot, importerArguments.NoFileContent))
+                    {
+                        if (File.Exists(importerArguments.ThirdpartyConfig))
+                        {
+                            var thirdPartyConfig = ThirdPartyConfig.ReadFromFile(importerArguments.ThirdpartyConfig);
+                            var hook = new ThirdPartyHook(thirdPartyConfig);
+                            gitWriter.PreWritingHooks.AddRange(hook.PreWritingHooks);
+                            gitWriter.PostWritingHooks.AddRange(hook.PostWritingHooks);
+                        }
                         gitWriter.WriteFile(importerArguments.FetchFileContent);
+                    }
                     Logger.TraceData(TraceEventType.Stop | TraceEventType.Information, 0, "Stop program");
                     return;
                 }
@@ -92,15 +101,31 @@ namespace GitImporter
                     historyBuilder.SetBranchFilters(importerArguments.Branches);
                     var changeSets = historyBuilder.Build();
 
-                    using (var gitWriter = new GitWriter(importerArguments.ClearcaseRoot, importerArguments.NoFileContent, importerArguments.IgnoreFile))
+                    using (var gitWriter = new GitWriter(importerArguments.ClearcaseRoot, importerArguments.NoFileContent))
+                    {
+                        if (File.Exists(importerArguments.IgnoreFile))
+                            gitWriter.InitialFiles.Add(new Tuple<string, string>(".gitignore", importerArguments.IgnoreFile));
+                        if (File.Exists(importerArguments.ThirdpartyConfig))
+                        {
+                            var thirdPartyConfig = ThirdPartyConfig.ReadFromFile(importerArguments.ThirdpartyConfig);
+                            var hook = new ThirdPartyHook(thirdPartyConfig);
+                            gitWriter.PreWritingHooks.AddRange(hook.PreWritingHooks);
+                            gitWriter.PostWritingHooks.AddRange(hook.PostWritingHooks);
+                            gitWriter.InitialFiles.Add(new Tuple<string, string>(".gitmodules", hook.ModulesFile));
+                        }
                         gitWriter.WriteChangeSets(changeSets);
+                    }
                 }
-
-                Logger.TraceData(TraceEventType.Stop | TraceEventType.Information, 0, "Stop program");
             }
             catch (Exception ex)
             {
+                Logger.TraceData(TraceEventType.Critical, 0, "Exception during import : " + ex);
                 Console.Error.WriteLine("Exception during import : " + ex);
+            }
+            finally
+            {
+                Logger.TraceData(TraceEventType.Stop | TraceEventType.Information, 0, "Stop program");
+                Logger.Flush();
             }
         }
     }

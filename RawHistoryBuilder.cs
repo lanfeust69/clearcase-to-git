@@ -216,7 +216,7 @@ namespace GitImporter
         {
             if (_branchFilters == null || _branchFilters.Count == 0)
                 return;
-            var branchesToRemove = new HashSet<string>(GlobalBranches.Keys.Where(b => !_branchFilters.Exists(r => r.IsMatch(b))));
+            var branchesToRemove = new HashSet<string>(GlobalBranches.Keys.Where(b => b != "main" && !_branchFilters.Exists(r => r.IsMatch(b))));
             bool finished = false;
             while (!finished)
             {

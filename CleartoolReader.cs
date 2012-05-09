@@ -196,8 +196,12 @@ namespace GitImporter
                         dirVersion.Content.Add(new KeyValuePair<string, Element>(child.Key, childElement));
                     else if (child.Value.StartsWith(SymLinkElement.SYMLINK))
                     {
-                        var symLink = new SymLinkElement(branch.Element, child.Value);
-                        ElementsByOid.Add(symLink.Oid, symLink);
+                        Element symLink = new SymLinkElement(branch.Element, child.Value);
+                        Element existing;
+                        if (ElementsByOid.TryGetValue(symLink.Oid, out existing))
+                            symLink = existing;
+                        else
+                            ElementsByOid.Add(symLink.Oid, symLink);
                         dirVersion.Content.Add(new KeyValuePair<string, Element>(child.Key, symLink));
                     }
                     else

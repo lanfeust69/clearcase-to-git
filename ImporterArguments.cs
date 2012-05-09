@@ -31,6 +31,8 @@ namespace GitImporter
         public string FetchFileContent;
         [Argument(ArgumentType.AtMostOnce, HelpText = "File that will be added as .gitignore at the repo root.")]
         public string IgnoreFile;
+        [Argument(ArgumentType.AtMostOnce, HelpText = "Configuration file describing how to handle thirdparties as submodules.", DefaultValue = "thirdparty.config")]
+        public string ThirdpartyConfig;
         [DefaultArgument(ArgumentType.MultipleUnique, HelpText = "Export files generated using clearexport. Each file is supposed to be directly in the working directory, but there may be a prefix that means a path from the main clearcase root.")]
         public string[] ExportFiles = new string[0];
 
