@@ -244,25 +244,25 @@ namespace GitImporter
             List<KeyValuePair<Element, List<Tuple<Element, string>>>> addedElements)
         {
             // now elementNames have target names
-            // we know that entries in removedElements are ordered from root to leaf
+            // we know that entries in renamedElements are ordered from root to leaf
             // we still need to update the old name if a parent directory has already been moved
-            // also, we must process all directories before files
-            foreach (var pair in renamedElements.Where(p => p.Key.IsDirectory).Union(renamedElements.Where(p => !p.Key.IsDirectory)))
+            foreach (var pair in renamedElements)
             {
+                var renamedElement = pair.Key;
                 var oldName = pair.Value;
                 // in case of simple rename (without a new version), the old name has not been removed from elementsNames
-                _elementsNames.RemoveFromCollection(pair.Key, oldName);
+                _elementsNames.RemoveFromCollection(renamedElement, oldName);
 
                 foreach (var rename in _changeSet.Renamed)
                 {
                     // changeSet.Renamed is in correct order
                     if (oldName.StartsWith(rename.Item1 + "/"))
-                        oldName = oldName.Replace(rename.Item1 + "/", rename.Item2 + "/");
+                        oldName = rename.Item2 + "/" + oldName.Substring(rename.Item1.Length + 1);
                 }
                 string renamedTo = null;
                 int index;
                 for (index = 0; index < addedElements.Count; index++)
-                    if (addedElements[index].Key == pair.Key)
+                    if (addedElements[index].Key == renamedElement)
                         break;
 
                 foreach (var newName in addedElements[index].Value)
@@ -270,23 +270,39 @@ namespace GitImporter
                     HashSet<string> elementNames;
                     if (_elementsNames.TryGetValue(newName.Item1, out elementNames))
                     {
-                        if (!WasEmptyDirectory(pair.Key))
+                        if (!WasEmptyDirectory(renamedElement))
                         {
                             foreach (string name in elementNames)
                             {
+                                string target = name + "/" + newName.Item2;
+                                // if a previous rename or copy wrote to a child of target,
+                                // then it will be overwritten here, so we update using the old name instead
+                                for (int i = 0; i < _changeSet.Renamed.Count; i++)
+                                {
+                                    var rename = _changeSet.Renamed[i];
+                                    if (rename.Item2.StartsWith(target + "/"))
+                                        _changeSet.Renamed[i] = new Tuple<string, string>(rename.Item1, oldName + "/" + rename.Item2.Substring(target.Length + 1));
+                                }
+                                for (int i = 0; i < _changeSet.Copied.Count; i++)
+                                {
+                                    var copy = _changeSet.Copied[i];
+                                    if (copy.Item2.StartsWith(target + "/"))
+                                        _changeSet.Renamed[i] = new Tuple<string, string>(copy.Item1, oldName + "/" + copy.Item2.Substring(target.Length + 1));
+                                }
+
+                                // actual rename or copy
                                 if (renamedTo == null)
                                 {
-                                    renamedTo = name + "/" + newName.Item2;
+                                    renamedTo = target;
                                     _changeSet.Renamed.Add(new Tuple<string, string>(oldName, renamedTo));
-                                    // special case : it may happen that there was another element with the
-                                    // destination name, that was simply removed
-                                    // in this case the Remove would instead wrongly apply to the renamed
-                                    // element, but since the Rename effectively removed the old version,
-                                    // we can simply skip it :
-                                    _changeSet.Removed.Remove(renamedTo);
                                 }
                                 else
-                                    _changeSet.Copied.Add(new Tuple<string, string>(renamedTo, name + "/" + newName.Item2));
+                                    _changeSet.Copied.Add(new Tuple<string, string>(renamedTo, target));
+                                
+                                // it may happen that there was another element with the destination name that was removed (not renamed)
+                                // in this case the Remove would instead wrongly apply to the renamed or copied element,
+                                // but since the Rename or Copy effectively removes the old version, we can simply skip it :
+                                _changeSet.Removed.Remove(target);
                             }
                         }
                     }

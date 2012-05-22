@@ -22,7 +22,7 @@ namespace GitImporter
         private readonly Regex _directoryEntryRegex = new Regex("^===> name: \"([^\"]+)\"");
         private readonly Regex _oidRegex = new Regex(@"cataloged oid: (\S+) \(mtype \d+\)");
         private readonly Regex _symlinkRegex = new Regex("^.+ --> (.+)$");
-        private readonly Regex _mergeRegex = new Regex(@"^(""Merge@\d+@[^""]+"" (<-|->) ""[^""]+\\([^\\]+)\\(\d+)"" )+$");
+        private readonly Regex _mergeRegex = new Regex(@"^(""Merge@\d+@[^""]+"" (<-|->) ""[^""]+\\([^\\]+)\\((CHECKEDOUT\.)?\d+)"" )+$");
 
         private readonly Regex _separator = new Regex("~#~");
 
@@ -221,8 +221,14 @@ namespace GitImporter
             mergesFrom = new List<Tuple<string, int>>();
             int count = match.Groups[1].Captures.Count;
             for (int i = 0; i < count; i++)
-                (match.Groups[2].Captures[i].Value == "->" ? mergesTo : mergesFrom)
-                    .Add(new Tuple<string, int>(match.Groups[3].Captures[i].Value, int.Parse(match.Groups[4].Captures[i].Value)));
+            {
+                var addTo = match.Groups[2].Captures[i].Value == "->" ? mergesTo : mergesFrom;
+                var branch = match.Groups[3].Captures[i].Value;
+                var versionNumber = match.Groups[4].Captures[i].Value;
+                if (versionNumber.StartsWith("CHECKEDOUT"))
+                    continue;
+                addTo.Add(new Tuple<string, int>(branch, int.Parse(versionNumber)));
+            }
         }
 
         public string Get(string element)
