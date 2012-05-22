@@ -38,16 +38,16 @@ namespace GitImporter
                 _branchFilters = branches.Select(b => new Regex(b)).ToList();
         }
 
-        public List<ChangeSet> Build()
+        public List<ChangeSet> Build(List<ElementVersion> newVersions)
         {
-            var allElementBranches = CreateRawChangeSets();
+            var allElementBranches = CreateRawChangeSets(newVersions);
             ComputeGlobalBranches(allElementBranches);
             FilterBranches();
             FilterLabels();
             return _changeSets.Values.SelectMany(d => d.Values.SelectMany(l => l)).OrderBy(c => c, _comparer).ToList();
         }
 
-        private IEnumerable<string> CreateRawChangeSets()
+        private IEnumerable<string> CreateRawChangeSets(IEnumerable<ElementVersion> newVersions)
         {
             Logger.TraceData(TraceEventType.Start | TraceEventType.Information, (int)TraceId.CreateChangeSet, "Start creating raw ChangeSets");
             // the list must always be kept sorted, so that BinarySearch works
@@ -56,52 +56,72 @@ namespace GitImporter
             _changeSets = new Dictionary<string, Dictionary<string, List<ChangeSet>>>();
             // keep all FullName's, so that we can try to guess "global" BranchingPoint
             var allElementBranches = new HashSet<string>();
-            foreach (var element in _elementsByOid.Values)
-                foreach (var branch in element.Branches.Values)
+            if (newVersions != null)
+            {
+                foreach (var version in newVersions)
                 {
-                    allElementBranches.Add(branch.FullName);
+                    allElementBranches.Add(version.Branch.FullName);
                     Dictionary<string, List<ChangeSet>> branchChangeSets;
-                    if (!_changeSets.TryGetValue(branch.BranchName, out branchChangeSets))
+                    if (!_changeSets.TryGetValue(version.Branch.BranchName, out branchChangeSets))
                     {
                         branchChangeSets = new Dictionary<string, List<ChangeSet>>();
-                        _changeSets.Add(branch.BranchName, branchChangeSets);
+                        _changeSets.Add(version.Branch.BranchName, branchChangeSets);
                     }
-                    foreach (var version in branch.Versions)
-                    {
-                        // we don't really handle versions 0 on branches : always consider BranchingPoint
-                        ElementVersion versionForLabel = version;
-                        while (versionForLabel.VersionNumber == 0 && versionForLabel.Branch.BranchingPoint != null)
-                            versionForLabel = versionForLabel.Branch.BranchingPoint;
-                        foreach (var label in version.Labels)
-                        {
-                            LabelInfo labelInfo;
-                            if (!Labels.TryGetValue(label, out labelInfo))
-                            {
-                                labelInfo = new LabelInfo(label);
-                                Labels.Add(label, labelInfo);
-                            }
-                            labelInfo.Versions.Add(versionForLabel);
-                            // also actually "move" the label
-                            if (versionForLabel != version)
-                                versionForLabel.Labels.Add(label);
-                        }
-                        // end of label move
-                        if (versionForLabel != version)
-                            version.Labels.Clear();
-                        if (version.VersionNumber == 0 && (version.Element.IsDirectory || version.Branch.BranchName != "main"))
-                            continue;
-                        List<ChangeSet> authorChangeSets;
-                        if (!branchChangeSets.TryGetValue(version.AuthorLogin, out authorChangeSets))
-                        {
-                            authorChangeSets = new List<ChangeSet>();
-                            branchChangeSets.Add(version.AuthorLogin, authorChangeSets);
-                        }
-                        AddVersion(authorChangeSets, version);
-                    }
+                    ProcessVersion(version, branchChangeSets);
                 }
+            }
+            else
+            {
+                foreach (var element in _elementsByOid.Values)
+                    foreach (var branch in element.Branches.Values)
+                    {
+                        allElementBranches.Add(branch.FullName);
+                        Dictionary<string, List<ChangeSet>> branchChangeSets;
+                        if (!_changeSets.TryGetValue(branch.BranchName, out branchChangeSets))
+                        {
+                            branchChangeSets = new Dictionary<string, List<ChangeSet>>();
+                            _changeSets.Add(branch.BranchName, branchChangeSets);
+                        }
+                        foreach (var version in branch.Versions)
+                            ProcessVersion(version, branchChangeSets);
+                    }
+            }
 
             Logger.TraceData(TraceEventType.Stop | TraceEventType.Information, (int)TraceId.CreateChangeSet, "Stop creating raw ChangeSets");
             return allElementBranches;
+        }
+
+        private void ProcessVersion(ElementVersion version, Dictionary<string, List<ChangeSet>> branchChangeSets)
+        {
+            // we don't really handle versions 0 on branches : always consider BranchingPoint
+            ElementVersion versionForLabel = version;
+            while (versionForLabel.VersionNumber == 0 && versionForLabel.Branch.BranchingPoint != null)
+                versionForLabel = versionForLabel.Branch.BranchingPoint;
+            foreach (var label in version.Labels)
+            {
+                LabelInfo labelInfo;
+                if (!Labels.TryGetValue(label, out labelInfo))
+                {
+                    labelInfo = new LabelInfo(label);
+                    Labels.Add(label, labelInfo);
+                }
+                labelInfo.Versions.Add(versionForLabel);
+                // also actually "move" the label
+                if (versionForLabel != version)
+                    versionForLabel.Labels.Add(label);
+            }
+            // end of label move
+            if (versionForLabel != version)
+                version.Labels.Clear();
+            if (version.VersionNumber == 0 && (version.Element.IsDirectory || version.Branch.BranchName != "main"))
+                return;
+            List<ChangeSet> authorChangeSets;
+            if (!branchChangeSets.TryGetValue(version.AuthorLogin, out authorChangeSets))
+            {
+                authorChangeSets = new List<ChangeSet>();
+                branchChangeSets.Add(version.AuthorLogin, authorChangeSets);
+            }
+            AddVersion(authorChangeSets, version);
         }
 
         private static void AddVersion(List<ChangeSet> changeSets, ElementVersion version)

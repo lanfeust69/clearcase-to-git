@@ -52,8 +52,9 @@ namespace GitImporter
             Logger.TraceData(TraceEventType.Stop | TraceEventType.Information, (int)TraceId.ReadCleartool, "Stop fetching oids of exported elements");
         }
 
-        public void Read(string directoriesFile, string elementsFile, string versionsFile)
+        public List<ElementVersion> Read(string directoriesFile, string elementsFile, string versionsFile)
         {
+            List<ElementVersion> result = null;
             if (!string.IsNullOrWhiteSpace(elementsFile))
             {
                 Logger.TraceData(TraceEventType.Start | TraceEventType.Information, (int)TraceId.ReadCleartool, "Start reading file elements", elementsFile);
@@ -91,6 +92,7 @@ namespace GitImporter
             if (!string.IsNullOrWhiteSpace(versionsFile))
             {
                 Logger.TraceData(TraceEventType.Start | TraceEventType.Information, (int)TraceId.ReadCleartool, "Start reading individual versions", versionsFile);
+                result = new List<ElementVersion>();
                 using (var versions = new StreamReader(versionsFile))
                 {
                     string line;
@@ -99,7 +101,7 @@ namespace GitImporter
                     {
                         if (++i % 100 == 0)
                             Logger.TraceData(TraceEventType.Information, (int)TraceId.ReadCleartool, "Reading version " + i);
-                        ReadVersion(line);
+                        ReadVersion(line, result);
                     }
                 }
                 Logger.TraceData(TraceEventType.Stop | TraceEventType.Information, (int)TraceId.ReadCleartool, "Stop reading individual versions", versionsFile);
@@ -129,6 +131,7 @@ namespace GitImporter
                 (fixup.Item4 ? toFix.MergesTo : toFix.MergesFrom).Add(linkTo);
             }
             Logger.TraceData(TraceEventType.Stop | TraceEventType.Information, (int)TraceId.ReadCleartool, "Stop fixups");
+            return result;
         }
 
         private void ReadElement(string elementName, bool isDir)
@@ -168,7 +171,7 @@ namespace GitImporter
                     branch = new ElementBranch(element, branchName, branchingPoint);
                     element.Branches[branchName] = branch;
                 }
-                bool added = AddVersionToBranch(branch, versionNumber, isDir);
+                bool added = AddVersionToBranch(branch, versionNumber, isDir, null);
                 if (!added)
                 {
                     // versions was too recent
@@ -182,7 +185,7 @@ namespace GitImporter
             Logger.TraceData(TraceEventType.Stop | TraceEventType.Verbose, (int)TraceId.ReadCleartool, "Stop reading element", elementName);
         }
 
-        private bool AddVersionToBranch(ElementBranch branch, int versionNumber, bool isDir)
+        private bool AddVersionToBranch(ElementBranch branch, int versionNumber, bool isDir, List<ElementVersion> newVersions)
         {
             ElementVersion version;
             if (isDir)
@@ -232,10 +235,12 @@ namespace GitImporter
             }
 
             branch.Versions.Add(version);
+            if (newVersions != null)
+                newVersions.Add(version);
             return true;
         }
 
-        private void ReadVersion(string version)
+        private void ReadVersion(string version, List<ElementVersion> newVersions)
         {
             Match match = _versionRegex.Match(version);
             if (!match.Success)
@@ -287,7 +292,7 @@ namespace GitImporter
             }
             else
             {
-                ReadVersion(elementName + "@@" + previousVersion);
+                ReadVersion(elementName + "@@" + previousVersion, newVersions);
                 string[] parts = previousVersion.Split('\\');
                 previousVersionNumber = int.Parse(parts[parts.Length - 1]);
             }
@@ -311,7 +316,7 @@ namespace GitImporter
                 element.Branches[branchName] = branch;
             }
             
-            bool added = AddVersionToBranch(branch, versionNumber, isDir);
+            bool added = AddVersionToBranch(branch, versionNumber, isDir, newVersions);
             if (!added && branch.Versions.Count == 0)
                 // do not leave an empty branch
                 element.Branches.Remove(branchName);

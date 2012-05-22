@@ -45,9 +45,9 @@ namespace GitImporter
                 _roots.Add(root);
         }
 
-        public IList<ChangeSet> Build()
+        public IList<ChangeSet> Build(List<ElementVersion> newVersions)
         {
-            _flattenChangeSets = _rawHistoryBuilder.Build();
+            _flattenChangeSets = _rawHistoryBuilder.Build(newVersions);
             _globalBranches = _rawHistoryBuilder.GlobalBranches;
             _labels = _rawHistoryBuilder.Labels;
             return ProcessElementNames();

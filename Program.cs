@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using ProtoBuf;
@@ -70,6 +71,8 @@ namespace GitImporter
                 foreach (var file in importerArguments.ExportFiles)
                     exportReader.ReadFile(file);
 
+                List<ElementVersion> newVersions = null;
+
                 if (!string.IsNullOrWhiteSpace(importerArguments.DirectoriesFile) ||
                     !string.IsNullOrWhiteSpace(importerArguments.ElementsFile) ||
                     !string.IsNullOrWhiteSpace(importerArguments.VersionsFile))
@@ -84,7 +87,7 @@ namespace GitImporter
                                 Serializer.Serialize(stream, vobDB);
                             Logger.TraceData(TraceEventType.Information, 0, "Clearcase export with oid successfully saved in " + importerArguments.SaveVobDB + ".export_oid");
                         }
-                        cleartoolReader.Read(importerArguments.DirectoriesFile, importerArguments.ElementsFile, importerArguments.VersionsFile);
+                        newVersions = cleartoolReader.Read(importerArguments.DirectoriesFile, importerArguments.ElementsFile, importerArguments.VersionsFile);
                         vobDB = cleartoolReader.VobDB;
                         if (!string.IsNullOrWhiteSpace(importerArguments.SaveVobDB))
                         {
@@ -99,7 +102,7 @@ namespace GitImporter
                     var historyBuilder = new HistoryBuilder(vobDB);
                     historyBuilder.SetRoots(importerArguments.Roots);
                     historyBuilder.SetBranchFilters(importerArguments.Branches);
-                    var changeSets = historyBuilder.Build();
+                    var changeSets = historyBuilder.Build(newVersions);
 
                     using (var gitWriter = new GitWriter(importerArguments.ClearcaseRoot, importerArguments.NoFileContent))
                     {
