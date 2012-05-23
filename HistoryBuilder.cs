@@ -68,6 +68,8 @@ namespace GitImporter
             var orphanedVersionsByElement = new Dictionary<Element, List<Tuple<string, ChangeSet.NamedVersion>>>();
             // some moves (rename) may be in separate ChangeSets, we must be able to know what version to write at the new location
             var elementsVersionsByBranch = new Dictionary<string, Dictionary<Element, ElementVersion>>();
+            // orphan versions that completed a label : should be orphans till the end
+            var labeledOrphans = new HashSet<ElementVersion>();
 
             var applyNowChangeSets = new Queue<ChangeSet>();
 
@@ -124,9 +126,21 @@ namespace GitImporter
                 }
 
                 var changeSetBuilder = new ChangeSetBuilder(changeSet, elementsNames, elementsVersions, orphanedVersionsByElement, _roots);
-                changeSetBuilder.Build();
+                var orphanedVersions = changeSetBuilder.Build();
 
                 var finishedLabels = new HashSet<string>();
+                foreach (var version in orphanedVersions)
+                {
+                    // we should usually not complete a label here : the version of the parent directory with the label should not have been seen
+                    // this can still happen if the version only appears in directories not imported (meaning they will be reported in "really lost versions")
+                    changeSet.Labels.AddRange(ProcessLabels(version, elementsVersions, finishedLabels));
+                    if (finishedLabels.Count > 0)
+                    {
+                        labeledOrphans.Add(version);
+                        Logger.TraceData(TraceEventType.Warning, (int)TraceId.CreateChangeSet,
+                                         "Label(s) " + string.Join(", ", finishedLabels) + " has been completed with orphan version " + version);
+                    }
+                }
                 foreach (var namedVersion in changeSet.Versions)
                     changeSet.Labels.AddRange(ProcessLabels(namedVersion.Version, elementsVersions, finishedLabels));
 
@@ -136,8 +150,16 @@ namespace GitImporter
             // really lost versions
             foreach (var orphanedVersions in orphanedVersionsByElement.Values)
                 foreach (var orphanedVersion in orphanedVersions)
+                {
+                    labeledOrphans.Remove(orphanedVersion.Item2.Version);
                     Logger.TraceData(TraceEventType.Warning, (int)TraceId.CreateChangeSet,
                                      "Version " + orphanedVersion.Item2.Version + " has not been visible in any imported directory version");
+                }
+
+            // labeled orphans that unexpectedly found a parent
+            foreach (var orphan in labeledOrphans)
+                Logger.TraceData(TraceEventType.Warning, (int)TraceId.CreateChangeSet,
+                                 "Version " + orphan + " has been labeled while an orphan");
 
             // uncompleted labels
             foreach (var label in _labels.Values)

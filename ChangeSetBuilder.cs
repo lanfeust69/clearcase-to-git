@@ -15,8 +15,10 @@ namespace GitImporter
         private Dictionary<Element, ElementVersion> _oldVersions;
         private readonly Dictionary<Element, List<Tuple<string, ChangeSet.NamedVersion>>> _orphanedVersionsByElement;
         private readonly HashSet<string> _roots;
+        private List<ElementVersion> _newOrphans;
 
-        public ChangeSetBuilder(ChangeSet changeSet, Dictionary<Element, HashSet<string>> elementsNames, Dictionary<Element, ElementVersion> elementsVersions, Dictionary<Element, List<Tuple<string, ChangeSet.NamedVersion>>> orphanedVersionsByElement, HashSet<string> roots)
+        public ChangeSetBuilder(ChangeSet changeSet, Dictionary<Element, HashSet<string>> elementsNames, Dictionary<Element, ElementVersion> elementsVersions,
+            Dictionary<Element, List<Tuple<string, ChangeSet.NamedVersion>>> orphanedVersionsByElement, HashSet<string> roots)
         {
             _changeSet = changeSet;
             _elementsVersions = elementsVersions;
@@ -25,8 +27,9 @@ namespace GitImporter
             _roots = roots;
         }
 
-        public void Build()
+        public List<ElementVersion> Build()
         {
+            _newOrphans = new List<ElementVersion>();
             // first update current version of changed elements, but keep old versions to handle remove/rename
             _oldVersions = new Dictionary<Element, ElementVersion>();
             foreach (var namedVersion in _changeSet.Versions)
@@ -41,7 +44,8 @@ namespace GitImporter
 
             ProcessDirectoryChanges();
 
-            foreach (var namedVersion in _changeSet.Versions)
+            // iterate on a copy so that we can remove
+            foreach (var namedVersion in _changeSet.Versions.ToList())
             {
                 if (namedVersion.Names.Count > 0)
                     continue;
@@ -59,10 +63,14 @@ namespace GitImporter
                         "Version " + namedVersion.Version + " was not yet visible in an existing directory version");
                     _orphanedVersionsByElement.AddToCollection(namedVersion.Version.Element,
                         new Tuple<string, ChangeSet.NamedVersion>(_changeSet.Branch, namedVersion));
+                    // do not keep it in _changeSet.Versions : maybe the name that will be given clashes with an existing one
+                    _changeSet.Versions.Remove(namedVersion);
+                    _newOrphans.Add(namedVersion.Version);
                     continue;
                 }
                 namedVersion.Names.AddRange(elementNames);
             }
+            return _newOrphans;
         }
 
         private void ProcessDirectoryChanges()
@@ -332,7 +340,6 @@ namespace GitImporter
                 return;
             }
             List<ChangeSet.NamedVersion> existing = _changeSet.Versions.Where(v => v.Version.Element == element).ToList();
-            ChangeSet.NamedVersion addedNamedVersion = null;
             if (existing.Count > 1)
                 throw new Exception("Unexpected number of versions (" + existing.Count + ") of file element " + element + " in change set " + _changeSet);
 
@@ -348,38 +355,33 @@ namespace GitImporter
                         Logger.TraceData(TraceEventType.Information, (int)TraceId.CreateChangeSet,
                             "Version " + existing[0].Version + " has several names : " + string.Join(", ", existing[0].Names));
                 }
-            }
-            else
-                addedNamedVersion = _changeSet.Add(currentVersion, fullName, false);
-
-            if (addedNamedVersion == null && fullName == null)
-                // nothing that interesting happened...
                 return;
+            }
 
             if (fullName == null)
             {
                 // sadly another orphan
-                _orphanedVersionsByElement.AddToCollection(element, new Tuple<string, ChangeSet.NamedVersion>(_changeSet.Branch, addedNamedVersion));
+                var newOrphan = new ChangeSet.NamedVersion(currentVersion, null, false);
+                _orphanedVersionsByElement.AddToCollection(element, new Tuple<string, ChangeSet.NamedVersion>(_changeSet.Branch, newOrphan));
+                _newOrphans.Add(currentVersion);
                 return;
             }
 
-            // we've got a name here, maybe we can patch some orphans ?
+            _changeSet.Add(currentVersion, fullName, false);
+
+            // we've got a name here, maybe some orphans just found their parent ?
             List<Tuple<string, ChangeSet.NamedVersion>> orphanedVersions;
             if (!_orphanedVersionsByElement.TryGetValue(element, out orphanedVersions))
-                // no, no orphan to patch
+                // no, no orphan to happily return to their family
                 return;
 
-            var completed = new List<Tuple<string, ChangeSet.NamedVersion>>();
-            foreach (var namedVersion in orphanedVersions)
+            foreach (var namedVersion in orphanedVersions.ToList())
                 if (namedVersion.Item1 == _changeSet.Branch && namedVersion.Item2.Version == currentVersion)
-                {
-                    namedVersion.Item2.Names.Add(fullName);
-                    completed.Add(namedVersion);
-                }
-            foreach (var toRemove in completed)
-                orphanedVersions.Remove(toRemove);
+                    orphanedVersions.Remove(namedVersion);
             if (orphanedVersions.Count == 0)
                 _orphanedVersionsByElement.Remove(element);
+
+            _newOrphans.Remove(currentVersion);
         }
 
         private void RemoveElementName(Element element, string elementName,
