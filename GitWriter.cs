@@ -67,17 +67,16 @@ namespace GitImporter
             int n = 0;
             Logger.TraceData(TraceEventType.Start | TraceEventType.Information, (int)TraceId.ApplyChangeSet, "Start writing " + total + " change sets");
 
-            // how frequently to report progress
-            int frequency;
-            var queue = new Queue<int>(new[] { 1, 2, 5 });
-            while (total / (frequency = queue.Dequeue()) > 1000)
-                queue.Enqueue(frequency * 10);
+            int checkpointFrequency = ComputeFrequency(total, 10);
+            int reportFrequency = ComputeFrequency(total, 1000);
 
             _initialFilesAdded = InitialFiles.Count == 0; // already "added" if not specified
             foreach (var changeSet in changeSets)
             {
                 n++;
-                if (n % frequency == 0)
+                if (n % checkpointFrequency == 0)
+                    _writer.Write("checkpoint\n\n");
+                if (n % reportFrequency == 0)
                     _writer.Write("progress Writing change set " + n + " of " + total + "\n\n");
 
                 Logger.TraceData(TraceEventType.Start | TraceEventType.Verbose, (int)TraceId.ApplyChangeSet, "Start writing change set", n);
@@ -86,6 +85,15 @@ namespace GitImporter
             }
 
             Logger.TraceData(TraceEventType.Stop | TraceEventType.Information, (int)TraceId.ApplyChangeSet, "Stop writing " + total + " change sets");
+        }
+
+        private static int ComputeFrequency(int total, int target)
+        {
+            int frequency;
+            var queue = new Queue<int>(new[] { 1, 2, 5 });
+            while (total / (frequency = queue.Dequeue()) > target)
+                queue.Enqueue(frequency * 10);
+            return frequency;
         }
 
         private void WriteChangeSet(ChangeSet changeSet)
