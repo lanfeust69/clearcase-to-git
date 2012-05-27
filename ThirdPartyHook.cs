@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
@@ -17,8 +18,10 @@ namespace GitImporter
 
         private readonly string _thirdpartyRoot;
         private readonly List<Tuple<string, string>> _allModules = new List<Tuple<string, string>>();
+        private readonly Dictionary<string, string> _alternateCase = new Dictionary<string, string>();
 
         private string _gitModulesFile;
+        private readonly Dictionary<string, HashSet<string>> _missingLabels = new Dictionary<string, HashSet<string>>();
 
         public List<GitWriter.PreWritingHook> PreWritingHooks { get; private set; }
         public List<GitWriter.PostWritingHook> PostWritingHooks { get; private set; }
@@ -38,8 +41,14 @@ namespace GitImporter
                 if (module.AlternateNames != null)
                     foreach (var alternateName in module.AlternateNames)
                     {
-                        _thirdPartyModules.Add(alternateName, labels);
-                        _allModules.Add(new Tuple<string, string>(alternateName, url));
+                        // only the standard name when case-only difference
+                        if (string.Compare(alternateName, module.Name, true) != 0)
+                        {
+                            _thirdPartyModules.Add(alternateName, labels);
+                            _allModules.Add(new Tuple<string, string>(alternateName, url));
+                        }
+                        else
+                            _alternateCase.Add(alternateName, module.Name);
                     }
                 if (!string.IsNullOrEmpty(module.ConfigSpecRegex))
                     _specificRules.Add(new Tuple<Regex, string>(new Regex(module.ConfigSpecRegex), module.Name));
@@ -60,7 +69,7 @@ namespace GitImporter
             {
                 foreach (var module in _allModules)
                 {
-                    writer.Write("[submodule \"" + module.Item1 + "\"]\n");
+                    writer.Write("[submodule \"" + _thirdpartyRoot + module.Item1 + "\"]\n");
                     writer.Write("\tpath = " + _thirdpartyRoot + module.Item1 + "\n");
                     writer.Write("\turl = " + module.Item2 + "\n");
                 }
@@ -125,10 +134,29 @@ namespace GitImporter
                         label = match.Groups[2].Value;
                     }
                     Dictionary<string, string> dict;
-                    string commit;
-                    if (!_thirdPartyModules.TryGetValue(module, out dict) || !dict.TryGetValue(label, out commit))
+                    string standardCaseModule;
+                    if (!_alternateCase.TryGetValue(module, out standardCaseModule))
+                        standardCaseModule = module;
+                    if (!_thirdPartyModules.TryGetValue(standardCaseModule, out dict))
                         continue;
-                    writer.Write("M 160000 " + commit + " " + _thirdpartyRoot + module + "\n");
+                    string commit;
+                    if (!dict.TryGetValue(label, out commit))
+                    {
+                        HashSet<string> missing;
+                        if (!_missingLabels.TryGetValue(standardCaseModule, out missing))
+                        {
+                            missing = new HashSet<string>();
+                            _missingLabels.Add(standardCaseModule, missing);
+                        }
+                        if (!missing.Contains(label))
+                        {
+                            missing.Add(label);
+                            GitWriter.Logger.TraceData(TraceEventType.Warning, (int)TraceId.ApplyChangeSet, "label " + label + " not found for module " + standardCaseModule);
+                        }
+                        continue;
+                    }
+
+                    writer.Write("M 160000 " + commit + " " + _thirdpartyRoot + standardCaseModule + "\n");
                 }
         }
 
