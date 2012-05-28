@@ -94,7 +94,7 @@ namespace GitImporter
             if (MergesFrom.Count > 0)
                 _rawMergesFrom = MergesFrom.Select(v => new Reference(v)).ToList();
             if (MergesTo.Count > 0)
-                _rawMergesTo = MergesFrom.Select(v => new Reference(v)).ToList();
+                _rawMergesTo = MergesTo.Select(v => new Reference(v)).ToList();
         }
 
         public void Fixup(ElementBranch branch)
