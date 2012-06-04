@@ -119,7 +119,7 @@ namespace GitImporter
                     return result;
                 }
             }
-            Logger.TraceData(TraceEventType.Warning, (int)TraceId.Cleartool, "Cleartool command failed " + _nbRetry + " times, aborting", cmd);
+            Logger.TraceData(TraceEventType.Error, (int)TraceId.Cleartool, "Cleartool command failed " + _nbRetry + " times, aborting", cmd);
             return new List<string>();
         }
 

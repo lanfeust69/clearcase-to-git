@@ -59,6 +59,11 @@ namespace GitImporter
         public DateTime FinishTime { get; private set; }
 
         public List<NamedVersion> Versions { get; private set; }
+        /// <summary>
+        /// SkippedVersions are usefull only for mergesTo : if there is a merge to a skipped version,
+        /// the actual (more recent) version of the corresponding element is also merged
+        /// </summary>
+        public List<ElementVersion> SkippedVersions { get; private set; }
         public List<Tuple<string, string>> Renamed { get; private set; }
         public List<string> Removed { get; private set; }
         public List<Tuple<string, string>> Copied { get; private set; }
@@ -68,6 +73,7 @@ namespace GitImporter
         public bool IsBranchingPoint { get; set; }
 
         public List<ChangeSet> Merges { get; private set; }
+        public bool IsMerged { get; set; }
 
         public List<string> Labels { get; set; }
 
@@ -77,7 +83,8 @@ namespace GitImporter
             {
                 return Versions.Where(v => !v.Version.Element.IsDirectory && v.Names.Count > 0).Count() == 0 &&
                     Renamed.Count == 0 && Removed.Count == 0 && Copied.Count == 0 &&
-                    SymLinks.Count == 0 && Labels.Count == 0 && !IsBranchingPoint;
+                    SymLinks.Count == 0 && Labels.Count == 0 && !IsBranchingPoint &&
+                    Merges.Count == 0 && !IsMerged;
             }
         }
 
@@ -90,6 +97,7 @@ namespace GitImporter
             FinishTime = time;
 
             Versions = new List<NamedVersion>();
+            SkippedVersions = new List<ElementVersion>();
             Renamed = new List<Tuple<string, string>>();
             Removed = new List<string>();
             Copied = new List<Tuple<string, string>>();
@@ -119,8 +127,16 @@ namespace GitImporter
                     Logger.TraceData(TraceEventType.Information, (int)TraceId.CreateChangeSet,
                         "Version " + version + " has several names : " + string.Join(", ", existing.Names));
                 }
+                ElementVersion skippedVersion = null;
                 if (existing.Version.VersionNumber < version.VersionNumber)
+                {
+                    skippedVersion = existing.Version;
                     existing.Version = version;
+                }
+                else if (existing.Version.VersionNumber > version.VersionNumber)
+                    skippedVersion = version;
+                if (skippedVersion != null && (skippedVersion.Labels.Count > 0 || skippedVersion.MergesFrom.Count > 0 || skippedVersion.MergesTo.Count > 0))
+                    SkippedVersions.Add(skippedVersion);
                 result = existing;
             }
             else

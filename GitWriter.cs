@@ -99,7 +99,10 @@ namespace GitImporter
         private void WriteChangeSet(ChangeSet changeSet)
         {
             if (changeSet.IsEmpty)
+            {
+                Logger.TraceData(TraceEventType.Information, (int)TraceId.ApplyChangeSet, "Skipped empty ChangeSet " + changeSet);
                 return;
+            }
 
             string branchName = changeSet.Branch == "main" ? "master" : changeSet.Branch;
             _writer.Write("commit refs/heads/" + branchName + "\n");

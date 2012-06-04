@@ -112,7 +112,7 @@ namespace GitImporter
                 if (ElementsByOid.TryGetValue(fixup.Item3, out childElement))
                     fixup.Item1.Content.Add(new KeyValuePair<string, Element>(fixup.Item2, childElement));
                 else
-                    Logger.TraceData(TraceEventType.Verbose, (int)TraceId.ReadCleartool,
+                    Logger.TraceData(TraceEventType.Warning, (int)TraceId.ReadCleartool,
                                      "Element " + fixup.Item2 + " (oid:" + fixup.Item3 + ") referenced as " + fixup.Item2 + " in " + fixup.Item1 + " was not imported");
             }
             foreach (var fixup in _mergeFixups)
@@ -121,7 +121,7 @@ namespace GitImporter
                 ElementVersion linkTo = toFix.Element.GetVersion(fixup.Item2, fixup.Item3);
                 if (linkTo == null)
                 {
-                    Logger.TraceData(TraceEventType.Verbose, (int)TraceId.ReadCleartool,
+                    Logger.TraceData(TraceEventType.Warning, (int)TraceId.ReadCleartool,
                                      "Version " + fixup.Item2 + "/" + fixup.Item3 + " of " + toFix.Element +
                                      ", linked to " + toFix.Branch.BranchName + "/" + toFix.VersionNumber + ", was not imported");
                     continue;

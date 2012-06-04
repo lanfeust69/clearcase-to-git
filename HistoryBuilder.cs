@@ -25,7 +25,8 @@ namespace GitImporter
 
         private List<ChangeSet> _flattenChangeSets;
         private int _currentIndex = 0;
-        private HashSet<string> _startedBranches = new HashSet<string>();
+        private readonly HashSet<string> _startedBranches = new HashSet<string>();
+        private readonly Dictionary<Tuple<string, string>, MergeInfo> _merges = new Dictionary<Tuple<string, string>, MergeInfo>();
 
         public HistoryBuilder(VobDB vobDB)
         {
@@ -58,7 +59,7 @@ namespace GitImporter
             int n = 0;
 
             // same content than _flattenChangeSets, but not necessarily same order
-            var result = new List<ChangeSet>(_flattenChangeSets.Count);
+            var orderedChangeSets = new List<ChangeSet>(_flattenChangeSets.Count);
 
             var branchTips = new Dictionary<string, ChangeSet>();
             // an element may appear under different names, especially during a move,
@@ -91,7 +92,7 @@ namespace GitImporter
                 n++;
                 // n is 1-based index because it is used as a mark id for git fast-import, that reserves id 0
                 changeSet.Id = n;
-                result.Add(changeSet);
+                orderedChangeSets.Add(changeSet);
                 Logger.TraceData(TraceEventType.Start | TraceEventType.Verbose, (int)TraceId.CreateChangeSet, "Start process element names in ChangeSet", changeSet);
                 if (n % 1000 == 0)
                     Logger.TraceData(TraceEventType.Information, (int)TraceId.CreateChangeSet, "Processing element names in ChangeSet", changeSet);
@@ -128,33 +129,35 @@ namespace GitImporter
                 var changeSetBuilder = new ChangeSetBuilder(changeSet, elementsNames, elementsVersions, orphanedVersionsByElement, _roots);
                 var orphanedVersions = changeSetBuilder.Build();
 
-                var finishedLabels = new HashSet<string>();
-                foreach (var version in orphanedVersions)
-                {
-                    // we should usually not complete a label here : the version of the parent directory with the label should not have been seen
-                    // this can still happen if the version only appears in directories not imported (meaning they will be reported in "really lost versions")
-                    changeSet.Labels.AddRange(ProcessLabels(version, elementsVersions, finishedLabels));
-                    if (finishedLabels.Count > 0)
-                    {
-                        labeledOrphans.Add(version);
-                        Logger.TraceData(TraceEventType.Warning, (int)TraceId.CreateChangeSet,
-                                         "Label(s) " + string.Join(", ", finishedLabels) + " has been completed with orphan version " + version);
-                    }
-                }
-                foreach (var namedVersion in changeSet.Versions)
-                    changeSet.Labels.AddRange(ProcessLabels(namedVersion.Version, elementsVersions, finishedLabels));
+                ProcessLabels(changeSet, elementsVersions, orphanedVersions, labeledOrphans);
 
                 Logger.TraceData(TraceEventType.Start | TraceEventType.Verbose, (int)TraceId.CreateChangeSet, "Stop process element names in ChangeSet", changeSet.Id);
             }
 
             // really lost versions
+            var lostVersions = new HashSet<ElementVersion>();
             foreach (var orphanedVersions in orphanedVersionsByElement.Values)
                 foreach (var orphanedVersion in orphanedVersions)
                 {
-                    labeledOrphans.Remove(orphanedVersion.Item2.Version);
+                    var lostVersion = orphanedVersion.Item2.Version;
+                    lostVersions.Add(lostVersion);
+                    labeledOrphans.Remove(lostVersion);
                     Logger.TraceData(TraceEventType.Warning, (int)TraceId.CreateChangeSet,
-                                     "Version " + orphanedVersion.Item2.Version + " has not been visible in any imported directory version");
+                                     "Version " + lostVersion + " has not been visible in any imported directory version");
                 }
+
+            // now that we now what versions to ignore :
+            foreach (var changeSet in orderedChangeSets)
+                ProcessMerges(changeSet, lostVersions);
+
+            // incomplete merges
+            foreach (var mergeInfo in _merges.Values.Where(m => m.MissingFromVersions.Count > 0 || m.MissingToVersions.Count > 0))
+            {
+                Logger.TraceData(TraceEventType.Warning, (int)TraceId.CreateChangeSet,
+                                    "Merge " + mergeInfo + " could not be completed : " +
+                                    (mergeInfo.MissingFromVersions.Count > 0 ? "missing fromVersions : " + string.Join(", ", mergeInfo.MissingFromVersions.Select(v => v.ToString())) : "") +
+                                    (mergeInfo.MissingToVersions.Count > 0 ? "missing toVersions : " + string.Join(", ", mergeInfo.MissingToVersions.Select(v => v.ToString())) : ""));
+            }
 
             // labeled orphans that unexpectedly found a parent
             foreach (var orphan in labeledOrphans)
@@ -170,8 +173,13 @@ namespace GitImporter
                 Logger.TraceData(TraceEventType.Warning, (int)TraceId.CreateChangeSet, "Label " + label.Name + " has " + label.MissingVersions.Count + " missing versions : not applied");
             }
 
+            // we may need to reorder a little bit in case of merges where the "To" is before the "From"
+            var result = new List<ChangeSet>(orderedChangeSets.Count);
+            for (int i = 0; i < orderedChangeSets.Count; i++)
+                AddChangeSet(orderedChangeSets, result, i);
+
             Logger.TraceData(TraceEventType.Stop | TraceEventType.Information, (int)TraceId.CreateChangeSet, "Stop process element names");
-            
+
             return result;
         }
 
@@ -381,8 +389,26 @@ namespace GitImporter
             return result;
         }
 
-        private IEnumerable<string> ProcessLabels(ElementVersion version,
-            Dictionary<Element, ElementVersion> elementsVersions, HashSet<string> finishedLabels)
+        private void ProcessLabels(ChangeSet changeSet, Dictionary<Element, ElementVersion> elementsVersions, List<ElementVersion> orphanedVersions, HashSet<ElementVersion> labeledOrphans)
+        {
+            var finishedLabels = new HashSet<string>();
+            foreach (var version in orphanedVersions)
+            {
+                // we should usually not complete a label here : the version of the parent directory with the label should not have been seen
+                // this can still happen if the version only appears in directories not imported (meaning they will be reported in "really lost versions")
+                changeSet.Labels.AddRange(ProcessVersionLabels(version, elementsVersions, finishedLabels));
+                if (finishedLabels.Count > 0)
+                {
+                    labeledOrphans.Add(version);
+                    Logger.TraceData(TraceEventType.Warning, (int)TraceId.CreateChangeSet,
+                                     "Label(s) " + string.Join(", ", finishedLabels) + " has been completed with orphan version " + version);
+                }
+            }
+            foreach (var namedVersion in changeSet.Versions)
+                changeSet.Labels.AddRange(ProcessVersionLabels(namedVersion.Version, elementsVersions, finishedLabels));
+        }
+
+        private IEnumerable<string> ProcessVersionLabels(ElementVersion version, Dictionary<Element, ElementVersion> elementsVersions, HashSet<string> finishedLabels)
         {
             var result = new List<string>();
             foreach (var label in version.Labels)
@@ -420,6 +446,124 @@ namespace GitImporter
                 }
             }
             return result;
+        }
+
+        private void ProcessMerges(ChangeSet changeSet, HashSet<ElementVersion> lostVersions)
+        {
+            var updatedMerges = new HashSet<MergeInfo>();
+            foreach (var version in changeSet.Versions.Select(v => v.Version))
+            {
+                foreach (var mergeTo in version.MergesTo)
+                    ProcessMerge(changeSet, version, mergeTo, false, lostVersions, updatedMerges);
+
+                foreach (var mergeFrom in version.MergesFrom)
+                    ProcessMerge(changeSet, mergeFrom, version, true, lostVersions, updatedMerges);
+            }
+
+            // merge to skipped versions are OK
+            foreach (var version in changeSet.SkippedVersions)
+                foreach (var mergeFrom in version.MergesFrom)
+                    ProcessMerge(changeSet, mergeFrom, version, true, lostVersions, updatedMerges);
+
+            foreach (var merge in updatedMerges)
+            {
+                if (merge.MissingToVersions.Count == 0 && merge.MissingFromVersions.Count == 0)
+                {
+                    merge.CurrentTo.Merges.Add(merge.CurrentFrom);
+                    merge.CurrentFrom.IsMerged = true;
+                    if (merge.CurrentTo.Id < merge.CurrentFrom.Id)
+                        Logger.TraceData(TraceEventType.Information, (int)TraceId.CreateChangeSet,
+                            "Wrong order of ChangeSets : merge of " + merge.CurrentFrom + " to " + merge.CurrentTo + " will need a reorder");
+
+                    merge.CurrentFrom = null;
+                    merge.CurrentTo = null;
+                }
+            }
+        }
+
+        private void ProcessMerge(ChangeSet changeSet, ElementVersion fromVersion, ElementVersion toVersion, bool isToVersionInChangeSet,
+            HashSet<ElementVersion> lostVersions, HashSet<MergeInfo> updatedMerges)
+        {
+            if (lostVersions.Contains(fromVersion) || lostVersions.Contains(toVersion))
+                return;
+
+            var from = fromVersion.Branch.BranchName;
+            var to = toVersion.Branch.BranchName;
+            // for now we only merge back to parent branch, assuming other merges are cherry-picking
+            string fromParent;
+            if (!_globalBranches.TryGetValue(from, out fromParent) || fromParent != to)
+                return;
+            // since version 0 is identical to branching point : not interesting
+            if (fromVersion.VersionNumber == 0)
+                return;
+            // handle several merges with a common end : we consider only the latest
+            if (!IsLatestMerge(fromVersion, toVersion))
+                return;
+
+            var key = new Tuple<string, string>(from, to);
+            MergeInfo mergeInfo;
+            if (!_merges.TryGetValue(key, out mergeInfo))
+            {
+                mergeInfo = new MergeInfo(from, to);
+                _merges.Add(key, mergeInfo);
+            }
+            // a version may be seen several times if it appears under a new name,
+            // or if a move of files happened in several steps, needing to re-create them (instead of simply moving them)
+            if (isToVersionInChangeSet)
+            {
+                if (mergeInfo.SeenToVersions.Contains(toVersion))
+                    return;
+                mergeInfo.SeenToVersions.Add(toVersion);
+                mergeInfo.CurrentTo = changeSet;
+                // either the fromVersion has already been seen, and toVersion is in MissingToVersions
+                // or we add fromVersion to MissingFromVersions
+                if (mergeInfo.MissingToVersions.Contains(toVersion))
+                    mergeInfo.MissingToVersions.Remove(toVersion);
+                else
+                    mergeInfo.MissingFromVersions.Add(fromVersion);
+            }
+            else
+            {
+                if (mergeInfo.SeenFromVersions.Contains(fromVersion))
+                    return;
+                mergeInfo.SeenFromVersions.Add(fromVersion);
+                mergeInfo.CurrentFrom = changeSet;
+                // either toVersion has already been seen, and fromVersion is in MissingFromVersions
+                // or we add toVersion to MissingToVersions
+                if (mergeInfo.MissingFromVersions.Contains(fromVersion))
+                    mergeInfo.MissingFromVersions.Remove(fromVersion);
+                else
+                    mergeInfo.MissingToVersions.Add(toVersion);
+            }
+            updatedMerges.Add(mergeInfo);
+        }
+
+        private static bool IsLatestMerge(ElementVersion fromVersion, ElementVersion toVersion)
+        {
+            return !fromVersion.MergesTo.Any(v => v.Branch == toVersion.Branch && v.VersionNumber > toVersion.VersionNumber) &&
+                !toVersion.MergesFrom.Any(v => v.Branch == fromVersion.Branch && v.VersionNumber > fromVersion.VersionNumber);
+        }
+
+        private static void AddChangeSet(List<ChangeSet> source, List<ChangeSet> destination, int sourceIndex)
+        {
+            var changeSet = source[sourceIndex];
+            if (changeSet == null)
+                return;
+
+            // add missing changeSets on other branches needed to have all merges available
+            foreach (var fromChangeSet in changeSet.Merges.Where(c => c.Id > changeSet.Id && source[c.Id - 1] != null))
+            {
+                Logger.TraceData(TraceEventType.Information, (int)TraceId.CreateChangeSet,
+                    "Reordering : ChangeSet " + fromChangeSet + "  must be imported before " + changeSet);
+                if (fromChangeSet != source[fromChangeSet.Id - 1])
+                    throw new Exception("Inconsistent Id for " + fromChangeSet +
+                        " : changeSet at corresponding index was " + (source[fromChangeSet.Id - 1] == null ? "null" : source[fromChangeSet.Id - 1].ToString()));
+                for (int i = sourceIndex + 1; i < fromChangeSet.Id; i++)
+                    if (source[i] != null && source[i].Branch == fromChangeSet.Branch)
+                        AddChangeSet(source, destination, i);
+            }
+            
+            destination.Add(changeSet);
         }
     }
 }
