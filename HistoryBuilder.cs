@@ -25,7 +25,7 @@ namespace GitImporter
 
         private List<ChangeSet> _flattenChangeSets;
         private int _currentIndex = 0;
-        private readonly HashSet<string> _startedBranches = new HashSet<string>();
+        private readonly Dictionary<string, ChangeSet> _startedBranches = new Dictionary<string, ChangeSet>();
         private readonly Dictionary<Tuple<string, string>, MergeInfo> _merges = new Dictionary<Tuple<string, string>, MergeInfo>();
 
         public HistoryBuilder(VobDB vobDB)
@@ -100,7 +100,7 @@ namespace GitImporter
                 branchTips[changeSet.Branch] = changeSet;
                 Dictionary<Element, HashSet<string>> elementsNames;
                 Dictionary<Element, ElementVersion> elementsVersions;
-                bool isNewBranch = !_startedBranches.Contains(changeSet.Branch);
+                bool isNewBranch = !_startedBranches.ContainsKey(changeSet.Branch);
                 if (isNewBranch)
                 {
                     if (changeSet.Branch != "main")
@@ -118,7 +118,7 @@ namespace GitImporter
                     }
                     elementsNamesByBranch.Add(changeSet.Branch, elementsNames);
                     elementsVersionsByBranch.Add(changeSet.Branch, elementsVersions);
-                    _startedBranches.Add(changeSet.Branch);
+                    _startedBranches.Add(changeSet.Branch, changeSet.BranchingPoint);
                 }
                 else
                 {
@@ -150,14 +150,7 @@ namespace GitImporter
             foreach (var changeSet in orderedChangeSets)
                 ProcessMerges(changeSet, lostVersions);
 
-            // incomplete merges
-            foreach (var mergeInfo in _merges.Values.Where(m => m.MissingFromVersions.Count > 0 || m.MissingToVersions.Count > 0))
-            {
-                Logger.TraceData(TraceEventType.Warning, (int)TraceId.CreateChangeSet,
-                                    "Merge " + mergeInfo + " could not be completed : " +
-                                    (mergeInfo.MissingFromVersions.Count > 0 ? "missing fromVersions : " + string.Join(", ", mergeInfo.MissingFromVersions.Select(v => v.ToString())) : "") +
-                                    (mergeInfo.MissingToVersions.Count > 0 ? "missing toVersions : " + string.Join(", ", mergeInfo.MissingToVersions.Select(v => v.ToString())) : ""));
-            }
+            ComputeAllMerges();
 
             // labeled orphans that unexpectedly found a parent
             foreach (var orphan in labeledOrphans)
@@ -275,10 +268,10 @@ namespace GitImporter
             foreach (var key in labelInfo.MissingVersions.Keys)
             {
                 missingBranch = key;
-                while (missingBranch != null && !_startedBranches.Contains(missingBranch) &&
+                while (missingBranch != null && !_startedBranches.ContainsKey(missingBranch) &&
                        _globalBranches[missingBranch] != branch)
                     missingBranch = _globalBranches[missingBranch];
-                if (missingBranch != null && !_startedBranches.Contains(missingBranch) && _globalBranches[missingBranch] == branch)
+                if (missingBranch != null && !_startedBranches.ContainsKey(missingBranch) && _globalBranches[missingBranch] == branch)
                     // found it !
                     break;
                 missingBranch = null;
@@ -339,7 +332,7 @@ namespace GitImporter
         private HashSet<Tuple<string, string>> FindWouldBreakLabels(ChangeSet changeSet)
         {
             var result = new HashSet<Tuple<string, string>>();
-            if (!_startedBranches.Contains(changeSet.Branch))
+            if (!_startedBranches.ContainsKey(changeSet.Branch))
             {
                 // then we would break any label on this new branch that is not complete on all parent branches
                 string parentBranch = _globalBranches[changeSet.Branch];
@@ -373,7 +366,7 @@ namespace GitImporter
                                                foreach (var branch in labelInfo.MissingVersions.Keys)
                                                {
                                                    var missingBranch = branch;
-                                                   while (missingBranch != null && !_startedBranches.Contains(missingBranch))
+                                                   while (missingBranch != null && !_startedBranches.ContainsKey(missingBranch))
                                                    {
                                                        var parent = _globalBranches[missingBranch];
                                                        if (parent == changeSet.Branch)
@@ -450,39 +443,22 @@ namespace GitImporter
 
         private void ProcessMerges(ChangeSet changeSet, HashSet<ElementVersion> lostVersions)
         {
-            var updatedMerges = new HashSet<MergeInfo>();
             foreach (var version in changeSet.Versions.Select(v => v.Version))
             {
                 foreach (var mergeTo in version.MergesTo)
-                    ProcessMerge(changeSet, version, mergeTo, false, lostVersions, updatedMerges);
+                    ProcessMerge(changeSet, version, mergeTo, false, lostVersions);
 
                 foreach (var mergeFrom in version.MergesFrom)
-                    ProcessMerge(changeSet, mergeFrom, version, true, lostVersions, updatedMerges);
+                    ProcessMerge(changeSet, mergeFrom, version, true, lostVersions);
             }
 
             // merge to skipped versions are OK
             foreach (var version in changeSet.SkippedVersions)
                 foreach (var mergeFrom in version.MergesFrom)
-                    ProcessMerge(changeSet, mergeFrom, version, true, lostVersions, updatedMerges);
-
-            foreach (var merge in updatedMerges)
-            {
-                if (merge.MissingToVersions.Count == 0 && merge.MissingFromVersions.Count == 0)
-                {
-                    merge.CurrentTo.Merges.Add(merge.CurrentFrom);
-                    merge.CurrentFrom.IsMerged = true;
-                    if (merge.CurrentTo.Id < merge.CurrentFrom.Id)
-                        Logger.TraceData(TraceEventType.Information, (int)TraceId.CreateChangeSet,
-                            "Wrong order of ChangeSets : merge of " + merge.CurrentFrom + " to " + merge.CurrentTo + " will need a reorder");
-
-                    merge.CurrentFrom = null;
-                    merge.CurrentTo = null;
-                }
-            }
+                    ProcessMerge(changeSet, mergeFrom, version, true, lostVersions);
         }
 
-        private void ProcessMerge(ChangeSet changeSet, ElementVersion fromVersion, ElementVersion toVersion, bool isToVersionInChangeSet,
-            HashSet<ElementVersion> lostVersions, HashSet<MergeInfo> updatedMerges)
+        private void ProcessMerge(ChangeSet changeSet, ElementVersion fromVersion, ElementVersion toVersion, bool isToVersionInChangeSet, HashSet<ElementVersion> lostVersions)
         {
             if (lostVersions.Contains(fromVersion) || lostVersions.Contains(toVersion))
                 return;
@@ -514,28 +490,44 @@ namespace GitImporter
                 if (mergeInfo.SeenToVersions.Contains(toVersion))
                     return;
                 mergeInfo.SeenToVersions.Add(toVersion);
-                mergeInfo.CurrentTo = changeSet;
                 // either the fromVersion has already been seen, and toVersion is in MissingToVersions
                 // or we add fromVersion to MissingFromVersions
-                if (mergeInfo.MissingToVersions.Contains(toVersion))
+                ChangeSet fromChangeSet;
+                if (mergeInfo.MissingToVersions.TryGetValue(toVersion, out fromChangeSet))
+                {
                     mergeInfo.MissingToVersions.Remove(toVersion);
+                    var missingInChangeSet = mergeInfo.MissingToVersionsByChangeSet[fromChangeSet];
+                    missingInChangeSet.Remove(toVersion);
+                    if (missingInChangeSet.Count == 0)
+                    {
+                        mergeInfo.MissingToVersionsByChangeSet.Remove(fromChangeSet);
+                        mergeInfo.Merges[fromChangeSet] = changeSet;
+                    }
+                }
                 else
-                    mergeInfo.MissingFromVersions.Add(fromVersion);
+                    mergeInfo.MissingFromVersions[fromVersion] = changeSet;
             }
             else
             {
                 if (mergeInfo.SeenFromVersions.Contains(fromVersion))
                     return;
                 mergeInfo.SeenFromVersions.Add(fromVersion);
-                mergeInfo.CurrentFrom = changeSet;
                 // either toVersion has already been seen, and fromVersion is in MissingFromVersions
                 // or we add toVersion to MissingToVersions
-                if (mergeInfo.MissingFromVersions.Contains(fromVersion))
+                ChangeSet toChangeSet;
+                if (mergeInfo.MissingFromVersions.TryGetValue(fromVersion, out toChangeSet))
+                {
                     mergeInfo.MissingFromVersions.Remove(fromVersion);
+                    ChangeSet existingTo;
+                    if (!mergeInfo.Merges.TryGetValue(changeSet, out existingTo) || existingTo.Id < toChangeSet.Id)
+                        mergeInfo.Merges[changeSet] = toChangeSet;
+                }
                 else
-                    mergeInfo.MissingToVersions.Add(toVersion);
+                {
+                    mergeInfo.MissingToVersions[toVersion] = changeSet;
+                    mergeInfo.MissingToVersionsByChangeSet.AddToCollection(changeSet, toVersion);
+                }
             }
-            updatedMerges.Add(mergeInfo);
         }
 
         private static bool IsLatestMerge(ElementVersion fromVersion, ElementVersion toVersion)
@@ -564,6 +556,43 @@ namespace GitImporter
             }
             
             destination.Add(changeSet);
+        }
+
+        private void ComputeAllMerges()
+        {
+            foreach (var mergeInfo in _merges.Values)
+            {
+                int currentTo = int.MaxValue;
+                var fromChangeSets = mergeInfo.Merges.Keys.OrderByDescending(c => c.Id);
+                foreach (var from in fromChangeSets)
+                {
+                    ChangeSet to = null;
+                    foreach (var candidate in fromChangeSets.Where(c => c.Id <= from.Id).Select(c => mergeInfo.Merges[c]))
+                        if (to == null || candidate.Id > to.Id)
+                            to = candidate;
+
+                    // we cannot merge before branching point !!
+                    if (to != null && to.Id < currentTo)
+                    {
+                        if (to.Id > _startedBranches[from.Branch].Id)
+                        {
+                            Logger.TraceData(TraceEventType.Warning, (int)TraceId.CreateChangeSet,
+                                "Invalid merge from " + from + " to " + to + " : branch " + mergeInfo.From + " branched from later changeSet " + _startedBranches[mergeInfo.From]);
+                            // no hope to have another meaningful merge
+                            break;
+                        }
+                        currentTo = to.Id;
+                        to.Merges.Add(from);
+                        from.IsMerged = true;
+                    }
+                }
+                // incomplete merges
+                if (mergeInfo.MissingFromVersions.Count > 0 || mergeInfo.MissingToVersions.Count > 0)
+                    Logger.TraceData(TraceEventType.Warning, (int)TraceId.CreateChangeSet,
+                                     "Merge " + mergeInfo + " could not be completed : " +
+                                     (mergeInfo.MissingFromVersions.Count > 0 ? "missing fromVersions : " + string.Join(", ", mergeInfo.MissingFromVersions.Select(v => v.Key.ToString())) : "") +
+                                     (mergeInfo.MissingToVersions.Count > 0 ? "missing toVersions : " + string.Join(", ", mergeInfo.MissingToVersions.Select(v => v.Key.ToString())) : ""));
+            }
         }
     }
 }

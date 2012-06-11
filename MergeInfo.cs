@@ -7,11 +7,11 @@ namespace GitImporter
         public string From { get; private set; }
         public string To { get; private set; }
 
-        public ChangeSet CurrentFrom { get; set; }
-        public ChangeSet CurrentTo { get; set; }
+        public Dictionary<ChangeSet, ChangeSet> Merges { get; private set; }
 
-        public HashSet<ElementVersion> MissingFromVersions { get; private set; }
-        public HashSet<ElementVersion> MissingToVersions { get; private set; }
+        public Dictionary<ElementVersion, ChangeSet> MissingFromVersions { get; private set; }
+        public Dictionary<ChangeSet, HashSet<ElementVersion>> MissingToVersionsByChangeSet { get; private set; }
+        public Dictionary<ElementVersion, ChangeSet> MissingToVersions { get; private set; }
 
         public HashSet<ElementVersion> SeenFromVersions { get; private set; }
         public HashSet<ElementVersion> SeenToVersions { get; private set; }
@@ -20,15 +20,17 @@ namespace GitImporter
         {
             From = from;
             To = to;
-            MissingFromVersions = new HashSet<ElementVersion>();
-            MissingToVersions = new HashSet<ElementVersion>();
+            Merges = new Dictionary<ChangeSet, ChangeSet>();
+            MissingFromVersions = new Dictionary<ElementVersion, ChangeSet>();
+            MissingToVersionsByChangeSet = new Dictionary<ChangeSet, HashSet<ElementVersion>>();
+            MissingToVersions = new Dictionary<ElementVersion, ChangeSet>();
             SeenFromVersions = new HashSet<ElementVersion>();
             SeenToVersions = new HashSet<ElementVersion>();
         }
 
         public override string ToString()
         {
-            return "Merge from " + From + " to " + To;
+            return "Merges from " + From + " to " + To;
         }
     }
 }
