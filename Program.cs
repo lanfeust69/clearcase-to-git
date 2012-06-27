@@ -99,10 +99,32 @@ namespace GitImporter
 
                 if (!importerArguments.GenerateVobDBOnly)
                 {
-                    var historyBuilder = new HistoryBuilder(vobDB);
-                    historyBuilder.SetRoots(importerArguments.Roots);
-                    historyBuilder.SetBranchFilters(importerArguments.Branches);
+                    HistoryBuilder historyBuilder = null;
+                    // we only use an existing HistoryBuilder for incremental import, ie when newVersions != null
+                    if (newVersions != null && !string.IsNullOrWhiteSpace(importerArguments.History) && File.Exists(importerArguments.History))
+                    {
+                        using (var stream = new FileStream(importerArguments.History, FileMode.Open))
+                            historyBuilder = Serializer.Deserialize<HistoryBuilder>(stream);
+                        Logger.TraceData(TraceEventType.Information, 0, "History data successfully loaded from " + importerArguments.History);
+                        historyBuilder.Fixup(vobDB);
+                    }
+                    if (historyBuilder == null)
+                    {
+                        historyBuilder = new HistoryBuilder(vobDB);
+                        historyBuilder.SetRoots(importerArguments.Roots);
+                        historyBuilder.SetBranchFilters(importerArguments.Branches);
+                    }
+
                     var changeSets = historyBuilder.Build(newVersions);
+
+                    if (!string.IsNullOrWhiteSpace(importerArguments.History))
+                    {
+                        if (File.Exists(importerArguments.History))
+                            File.Move(importerArguments.History, importerArguments.History + ".bak");
+                        using (var stream = new FileStream(importerArguments.History, FileMode.Create))
+                            Serializer.Serialize(stream, historyBuilder);
+                        Logger.TraceData(TraceEventType.Information, 0, "History data successfully saved in " + importerArguments.History);
+                    }
 
                     using (var gitWriter = new GitWriter(importerArguments.ClearcaseRoot, importerArguments.NoFileContent))
                     {

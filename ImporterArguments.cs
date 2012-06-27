@@ -9,6 +9,8 @@ namespace GitImporter
         public string SaveVobDB;
         [Argument(ArgumentType.MultipleUnique, HelpText = "Files from which which the complete clearcase data will be loaded.", DefaultValue = new string[0])]
         public string[] LoadVobDB;
+        [Argument(ArgumentType.AtMostOnce, HelpText = "File in which the (git) history state is kept for incremental use.")]
+        public string History;
         [Argument(ArgumentType.AtMostOnce, HelpText = "File listing directories to import.")]
         public string DirectoriesFile;
         [Argument(ArgumentType.AtMostOnce, HelpText = "File listing (non-directory) elements to import.")]

@@ -2,31 +2,67 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using ProtoBuf;
 
 namespace GitImporter
 {
+    [ProtoContract]
     public class HistoryBuilder
     {
         public static TraceSource Logger = Program.Logger;
 
-        private readonly RawHistoryBuilder _rawHistoryBuilder;
+        private RawHistoryBuilder _rawHistoryBuilder;
+        [ProtoMember(1)]
+        private string[] _branchFilters;
 
         /// <summary>
-        /// _roots are directory whose parents have not been requested :
+        /// _roots are directories whose parents have not been requested :
         /// they will therefore never appear in the Content of a DirectoryVersion
         /// </summary>
+        [ProtoMember(2)]
         private readonly HashSet<string> _roots = new HashSet<string>();
 
         /// <summary>
         /// For each branch, its parent branch
         /// </summary>
+        [ProtoMember(3)]
         private Dictionary<string, string> _globalBranches;
         private Dictionary<string, LabelInfo> _labels;
 
         private List<ChangeSet> _flattenChangeSets;
+        [ProtoMember(4)]
+        private int _lastId = 0;
         private int _currentIndex = 0;
         private readonly Dictionary<string, ChangeSet> _startedBranches = new Dictionary<string, ChangeSet>();
+        [ProtoMember(5)]
+        private Dictionary<string, int> _rawStartedBranches;
+
         private readonly Dictionary<Tuple<string, string>, MergeInfo> _merges = new Dictionary<Tuple<string, string>, MergeInfo>();
+        
+        /// <summary>
+        /// an element may appear under different names, especially during a move,
+        /// if the destination directory has been checked in before source directory
+        /// </summary>
+        private readonly Dictionary<string, Dictionary<Element, HashSet<string>>> _elementsNamesByBranch = new Dictionary<string, Dictionary<Element, HashSet<string>>>();
+        /// <summary>
+        /// some moves (rename) may be in separate ChangeSets, we must be able to know what version to write at the new location
+        /// </summary>
+        private readonly Dictionary<string, Dictionary<Element, ElementVersion>> _elementsVersionsByBranch = new Dictionary<string, Dictionary<Element, ElementVersion>>();
+        [ProtoMember(6)]
+        private Dictionary<string, Dictionary<string, List<string>>> _rawElementsNamesByBranch;
+        [ProtoMember(7)]
+        private Dictionary<string, Dictionary<string, ElementVersion.Reference>> _rawElementsVersionsByBranch;
+
+        private readonly Dictionary<string, ChangeSet> _branchTips = new Dictionary<string, ChangeSet>();
+        [ProtoMember(8)]
+        private Dictionary<string, int> _rawBranchTips;
+
+        /// <summary>
+        /// For use by protobuf
+        /// </summary>
+        public HistoryBuilder()
+        {
+        }
 
         public HistoryBuilder(VobDB vobDB)
         {
@@ -35,6 +71,7 @@ namespace GitImporter
 
         public void SetBranchFilters(string[] branches)
         {
+            _branchFilters = branches;
             _rawHistoryBuilder.SetBranchFilters(branches);
         }
 
@@ -48,7 +85,20 @@ namespace GitImporter
         public IList<ChangeSet> Build(List<ElementVersion> newVersions)
         {
             _flattenChangeSets = _rawHistoryBuilder.Build(newVersions);
-            _globalBranches = _rawHistoryBuilder.GlobalBranches;
+            if (_globalBranches != null)
+            {
+                string existingParent;
+                foreach (var branch in _rawHistoryBuilder.GlobalBranches)
+                    if (_globalBranches.TryGetValue(branch.Key, out existingParent))
+                    {
+                        if (branch.Value != existingParent)
+                            throw new Exception("Inconsistent branch " + branch.Key + " parent : " + branch.Value + " != " + existingParent);
+                    }
+                    else
+                        _globalBranches.Add(branch.Key, branch.Value);
+            }
+            else
+                _globalBranches = _rawHistoryBuilder.GlobalBranches;
             _labels = _rawHistoryBuilder.Labels;
             return ProcessElementNames();
         }
@@ -56,19 +106,12 @@ namespace GitImporter
         private List<ChangeSet> ProcessElementNames()
         {
             Logger.TraceData(TraceEventType.Start | TraceEventType.Information, (int)TraceId.CreateChangeSet, "Start process element names");
-            int n = 0;
 
             // same content than _flattenChangeSets, but not necessarily same order
             var orderedChangeSets = new List<ChangeSet>(_flattenChangeSets.Count);
 
-            var branchTips = new Dictionary<string, ChangeSet>();
-            // an element may appear under different names, especially during a move,
-            // if the destination directory has been checked in before source directory
-            var elementsNamesByBranch = new Dictionary<string, Dictionary<Element, HashSet<string>>>();
             // branch and version for which the elementName could not be found
             var orphanedVersionsByElement = new Dictionary<Element, List<Tuple<string, ChangeSet.NamedVersion>>>();
-            // some moves (rename) may be in separate ChangeSets, we must be able to know what version to write at the new location
-            var elementsVersionsByBranch = new Dictionary<string, Dictionary<Element, ElementVersion>>();
             // orphan versions that completed a label : should be orphans till the end
             var labeledOrphans = new HashSet<ElementVersion>();
 
@@ -89,15 +132,15 @@ namespace GitImporter
                         break;
                 }
 
-                n++;
+                _lastId++;
                 // n is 1-based index because it is used as a mark id for git fast-import, that reserves id 0
-                changeSet.Id = n;
+                changeSet.Id = _lastId;
                 orderedChangeSets.Add(changeSet);
                 Logger.TraceData(TraceEventType.Start | TraceEventType.Verbose, (int)TraceId.CreateChangeSet, "Start process element names in ChangeSet", changeSet);
-                if (n % 1000 == 0)
+                if (_lastId % 1000 == 0)
                     Logger.TraceData(TraceEventType.Information, (int)TraceId.CreateChangeSet, "Processing element names in ChangeSet", changeSet);
 
-                branchTips[changeSet.Branch] = changeSet;
+                _branchTips[changeSet.Branch] = changeSet;
                 Dictionary<Element, HashSet<string>> elementsNames;
                 Dictionary<Element, ElementVersion> elementsVersions;
                 bool isNewBranch = !_startedBranches.ContainsKey(changeSet.Branch);
@@ -106,24 +149,26 @@ namespace GitImporter
                     if (changeSet.Branch != "main")
                     {
                         string parentBranch = _globalBranches[changeSet.Branch];
-                        changeSet.BranchingPoint = branchTips[parentBranch];
-                        branchTips[parentBranch].IsBranchingPoint = true;
-                        elementsNames = new Dictionary<Element, HashSet<string>>(elementsNamesByBranch[parentBranch]);
-                        elementsVersions = new Dictionary<Element, ElementVersion>(elementsVersionsByBranch[parentBranch]);
+                        // TODO : this may well be wrong !
+                        changeSet.BranchingPoint = _branchTips[parentBranch];
+                        _branchTips[parentBranch].IsBranchingPoint = true;
+                        // we need a deep copy here
+                        elementsNames = _elementsNamesByBranch[parentBranch].ToDictionary(elementNames => elementNames.Key, elementNames => new HashSet<string>(elementNames.Value));
+                        elementsVersions = new Dictionary<Element, ElementVersion>(_elementsVersionsByBranch[parentBranch]);
                     }
                     else
                     {
                         elementsNames = new Dictionary<Element, HashSet<string>>();
                         elementsVersions = new Dictionary<Element, ElementVersion>();
                     }
-                    elementsNamesByBranch.Add(changeSet.Branch, elementsNames);
-                    elementsVersionsByBranch.Add(changeSet.Branch, elementsVersions);
+                    _elementsNamesByBranch.Add(changeSet.Branch, elementsNames);
+                    _elementsVersionsByBranch.Add(changeSet.Branch, elementsVersions);
                     _startedBranches.Add(changeSet.Branch, changeSet.BranchingPoint);
                 }
                 else
                 {
-                    elementsNames = elementsNamesByBranch[changeSet.Branch];
-                    elementsVersions = elementsVersionsByBranch[changeSet.Branch];
+                    elementsNames = _elementsNamesByBranch[changeSet.Branch];
+                    elementsVersions = _elementsVersionsByBranch[changeSet.Branch];
                 }
 
                 var changeSetBuilder = new ChangeSetBuilder(changeSet, elementsNames, elementsVersions, orphanedVersionsByElement, _roots);
@@ -556,6 +601,7 @@ namespace GitImporter
             }
             
             destination.Add(changeSet);
+            source[sourceIndex] = null;
         }
 
         private void ComputeAllMerges()
@@ -592,6 +638,92 @@ namespace GitImporter
                                      "Merge " + mergeInfo + " could not be completed : " +
                                      (mergeInfo.MissingFromVersions.Count > 0 ? "missing fromVersions : " + string.Join(", ", mergeInfo.MissingFromVersions.Select(v => v.Key.ToString())) : "") +
                                      (mergeInfo.MissingToVersions.Count > 0 ? "missing toVersions : " + string.Join(", ", mergeInfo.MissingToVersions.Select(v => v.Key.ToString())) : ""));
+            }
+        }
+
+        [ProtoBeforeSerialization]
+        private void BeforeProtobufSerialization()
+        {
+            _rawElementsNamesByBranch = new Dictionary<string, Dictionary<string, List<string>>>();
+            foreach (var pair in _elementsNamesByBranch)
+            {
+                var elements = new Dictionary<string, List<string>>();
+                _rawElementsNamesByBranch.Add(pair.Key, elements);
+                foreach (var element in pair.Value)
+                {
+                    var names = new List<string>(element.Value);
+                    elements.Add(element.Key.Oid, names);
+                }
+            }
+            _rawElementsVersionsByBranch = new Dictionary<string, Dictionary<string, ElementVersion.Reference>>();
+            foreach (var pair in _elementsVersionsByBranch)
+            {
+                var elements = new Dictionary<string, ElementVersion.Reference>();
+                _rawElementsVersionsByBranch.Add(pair.Key, elements);
+                foreach (var element in pair.Value)
+                    elements.Add(element.Key.Oid, new ElementVersion.Reference(element.Value));
+            }
+            _rawBranchTips = _branchTips.ToDictionary(p => p.Key, p => p.Value.Id);
+            // "main" branch has a null BranchingPoint
+            _rawStartedBranches = _startedBranches.ToDictionary(p => p.Key, p => p.Value == null ? 0 : p.Value.Id);
+        }
+
+        public void Fixup(VobDB vobDB)
+        {
+            _rawHistoryBuilder = new RawHistoryBuilder(null);
+            _rawHistoryBuilder.SetBranchFilters(_branchFilters);
+            if (_rawElementsNamesByBranch != null)
+            {
+                foreach (var pair in _rawElementsNamesByBranch)
+                {
+                    var elements = new Dictionary<Element, HashSet<string>>();
+                    _elementsNamesByBranch.Add(pair.Key, elements);
+                    foreach (var nameByOid in pair.Value)
+                    {
+                        Element element;
+                        if (!vobDB.ElementsByOid.TryGetValue(nameByOid.Key, out element))
+                        {
+                            Logger.TraceData(TraceEventType.Warning, (int)TraceId.CreateChangeSet, "Could not find element with oid " + nameByOid.Key + " in loaded vobDB");
+                            continue;
+                        }
+                        var names = new HashSet<string>(nameByOid.Value);
+                        elements.Add(element, names);
+                    }
+                }
+                _rawElementsNamesByBranch = null;
+            }
+            if (_rawElementsVersionsByBranch != null)
+            {
+                foreach (var pair in _rawElementsVersionsByBranch)
+                {
+                    var elements = new Dictionary<Element, ElementVersion>();
+                    _elementsVersionsByBranch.Add(pair.Key, elements);
+                    foreach (var versionByOid in pair.Value)
+                    {
+                        Element element;
+                        if (!vobDB.ElementsByOid.TryGetValue(versionByOid.Key, out element))
+                        {
+                            Logger.TraceData(TraceEventType.Warning, (int)TraceId.CreateChangeSet, "Could not find element with oid " + versionByOid.Key + " in loaded vobDB");
+                            continue;
+                        }
+                        elements.Add(element, element.GetVersion(versionByOid.Value.BranchName, versionByOid.Value.VersionNumber));
+                    }
+                }
+                _rawElementsVersionsByBranch = null;
+            }
+            if (_rawBranchTips != null)
+            {
+                foreach (var branchTip in _rawBranchTips)
+                    // creating dummy changeSets : they will never be used except for their Id
+                    _branchTips.Add(branchTip.Key, new ChangeSet("dummy", "dummy", branchTip.Key, DateTime.Now) { Id = branchTip.Value });
+                _rawBranchTips = null;
+            }
+            if (_rawStartedBranches != null)
+            {
+                foreach (var startedBranch in _rawStartedBranches)
+                    // creating dummy changeSets : they will never be used except for their Id
+                    _startedBranches.Add(startedBranch.Key, startedBranch.Value == 0 ? null : new ChangeSet("dummy", "dummy", startedBranch.Key, DateTime.Now) { Id = startedBranch.Value });
+                _rawStartedBranches = null;
             }
         }
     }

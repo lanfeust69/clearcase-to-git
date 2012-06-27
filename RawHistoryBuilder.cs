@@ -28,7 +28,8 @@ namespace GitImporter
 
         public RawHistoryBuilder(VobDB vobDB)
         {
-            _elementsByOid = vobDB.ElementsByOid;
+            if (vobDB != null)
+                _elementsByOid = vobDB.ElementsByOid;
             Labels = new Dictionary<string, LabelInfo>();
         }
 
