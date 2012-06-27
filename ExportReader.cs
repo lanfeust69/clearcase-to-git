@@ -11,6 +11,8 @@ namespace GitImporter
     {
         public static TraceSource Logger = Program.Logger;
 
+        private readonly DateTime _originDate;
+
         private static readonly DateTime _epoch = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
         private readonly Regex _elementNameRegex = new Regex(@"^Name \d+:(.*)");
@@ -25,9 +27,10 @@ namespace GitImporter
 
         public IList<Element> Elements { get; private set; }
 
-        public ExportReader()
+        public ExportReader(string originDate)
         {
             Elements = new List<Element>();
+            _originDate = string.IsNullOrEmpty(originDate) ? DateTime.UtcNow : DateTime.Parse(originDate).ToUniversalTime();
         }
 
         /// <summary>
@@ -103,7 +106,14 @@ namespace GitImporter
                     if (currentElement == null)
                         throw new Exception(file + ", line " + lineNb + " : Unexpected ELEMENT_END before it was named");
                     foreach (var merge in currentElementMerges)
-                        (merge.Item4 ? merge.Item1.MergesTo : merge.Item1.MergesFrom).Add(currentElement.GetVersion(merge.Item2, merge.Item3));
+                    {
+                        var version = merge.Item1;
+                        var other = currentElement.GetVersion(merge.Item2, merge.Item3);
+                        if (other == null || version.Date > _originDate)
+                            // skip merges to or from skipped versions (that were too recent)
+                            continue;
+                        (merge.Item4 ? version.MergesTo : version.MergesFrom).Add(other);
+                    }
 
                     Logger.TraceData(TraceEventType.Stop | TraceEventType.Verbose, (int)TraceId.ReadExport, "Stop reading element", currentElementName);
                     continue;
@@ -143,6 +153,12 @@ namespace GitImporter
                 if (currentVersion != null && (match = _timeRegex.Match(line)).Success)
                 {
                     currentVersion.Date = _epoch.AddSeconds(long.Parse(match.Groups[1].Value));
+                    if (currentVersion.Date > _originDate)
+                    {
+                        Logger.TraceData(TraceEventType.Information, (int)TraceId.ReadExport,
+                            string.Format("Skipping version {0} : {1} > {2}", currentVersion, currentVersion.Date, _originDate));
+                        currentBranch.Versions.Remove(currentVersion);
+                    }
                     continue;
                 }
                 if (currentVersion != null && (match = _labelRegex.Match(line)).Success)

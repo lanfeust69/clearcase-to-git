@@ -24,6 +24,7 @@ namespace GitImporter
             Console.Error.WriteLine("GitImporter called with {0} arguments :", args.Length);
             foreach (string arg in args)
                 Console.Error.WriteLine("    " + arg);
+            Logger.TraceData(TraceEventType.Information, 0, string.Format("GitImporter called with {0} arguments : {1}", args.Length, string.Join(" ", args)));
             var importerArguments = new ImporterArguments();
             if (!CommandLine.Parser.ParseArgumentsWithUsage(args, importerArguments))
                 return;
@@ -67,7 +68,7 @@ namespace GitImporter
                     }
                 }
 
-                var exportReader = new ExportReader();
+                var exportReader = new ExportReader(importerArguments.OriginDate);
                 foreach (var file in importerArguments.ExportFiles)
                     exportReader.ReadFile(file);
 
