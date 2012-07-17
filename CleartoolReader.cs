@@ -178,8 +178,8 @@ namespace GitImporter
                     if (branch.Versions.Count == 0)
                         // do not leave an empty branch
                         element.Branches.Remove(branchName);
-                    // versions are retrieved in order of creation : next ones won't make it either
-                    break;
+                    // versions are retrieved in order of creation only within a branch :
+                    // we still may have eligible versions on a parent branch, so we must continue
                 }
             }
             Logger.TraceData(TraceEventType.Stop | TraceEventType.Verbose, (int)TraceId.ReadCleartool, "Stop reading element", elementName);

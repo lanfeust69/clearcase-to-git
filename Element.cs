@@ -61,7 +61,14 @@ namespace GitImporter
             {
                 Branches = _rawElementsBranches.ToDictionary(b => b.BranchName);
                 foreach (var branch in _rawElementsBranches)
-                    branch.Fixup(this);
+                {
+                    // empty branch possible if all versions were too recent
+                    // in this case, protobuf leaves a null Versions property
+                    if (branch.Versions == null)
+                        Branches.Remove(branch.BranchName);
+                    else
+                        branch.Fixup(this);
+                }
             }
             else
                 Branches = new Dictionary<string, ElementBranch>();

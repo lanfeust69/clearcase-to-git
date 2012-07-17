@@ -620,7 +620,7 @@ namespace GitImporter
                     // we cannot merge before branching point !!
                     if (to != null && to.Id < currentTo)
                     {
-                        if (to.Id > _startedBranches[from.Branch].Id)
+                        if (to.Id < _startedBranches[from.Branch].Id)
                         {
                             Logger.TraceData(TraceEventType.Warning, (int)TraceId.CreateChangeSet,
                                 "Invalid merge from " + from + " to " + to + " : branch " + mergeInfo.From + " branched from later changeSet " + _startedBranches[mergeInfo.From]);
