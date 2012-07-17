@@ -42,6 +42,8 @@ namespace GitImporter
 
         private readonly bool _doNotIncludeFileContent;
         private bool _initialFilesAdded;
+        private bool _isIncremental;
+        private HashSet<string> _startedBranches = new HashSet<string>();
 
         public List<Tuple<string, string>> InitialFiles { get; private set; }
 
@@ -67,6 +69,7 @@ namespace GitImporter
             int n = 0;
             Logger.TraceData(TraceEventType.Start | TraceEventType.Information, (int)TraceId.ApplyChangeSet, "Start writing " + total + " change sets");
 
+            _isIncremental = changeSets.Count > 0 && changeSets[0].Id > 1;
             int checkpointFrequency = ComputeFrequency(total, 10);
             int reportFrequency = ComputeFrequency(total, 1000);
 
@@ -74,7 +77,7 @@ namespace GitImporter
             foreach (var changeSet in changeSets)
             {
                 n++;
-                if (n % checkpointFrequency == 0)
+                if (!_isIncremental && n % checkpointFrequency == 0)
                     _writer.Write("checkpoint\n\n");
                 if (n % reportFrequency == 0)
                     _writer.Write("progress Writing change set " + n + " of " + total + "\n\n");
@@ -110,7 +113,15 @@ namespace GitImporter
             _writer.Write("committer " + changeSet.AuthorName + " <" + changeSet.AuthorLogin + "> " + (changeSet.StartTime - _epoch).TotalSeconds + " +0200\n");
             InlineString(changeSet.GetComment());
             if (changeSet.BranchingPoint != null)
+            {
                 _writer.Write("from :" + changeSet.BranchingPoint.Id + "\n");
+                _startedBranches.Add(branchName);
+            }
+            else if (_isIncremental && !_startedBranches.Contains(branchName))
+            {
+                _writer.Write("from refs/heads/" + branchName + "^0\n");
+                _startedBranches.Add(branchName);
+            }
             foreach (var merge in changeSet.Merges)
                 _writer.Write("merge :" + merge.Id + "\n");
 
