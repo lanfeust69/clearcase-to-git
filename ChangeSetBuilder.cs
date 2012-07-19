@@ -261,11 +261,16 @@ namespace GitImporter
                 // in case of simple rename (without a new version), the old name has not been removed from elementsNames
                 _elementsNames.RemoveFromCollection(renamedElement, oldName);
 
-                foreach (var rename in _changeSet.Renamed)
+                int conflictingRename = -1;
+                for (int i = 0; i < _changeSet.Renamed.Count; i++)
                 {
-                    // changeSet.Renamed is in correct order
+                    var rename = _changeSet.Renamed[i];
+                    // changeSet.Renamed is in correct order within the directories hierarchy
                     if (oldName.StartsWith(rename.Item1 + "/"))
                         oldName = rename.Item2 + "/" + oldName.Substring(rename.Item1.Length + 1);
+                    // but among siblings, there may be special cases if A -> B and B -> C, or worse if A -> B and B -> A
+                    if (rename.Item2 == oldName)
+                        conflictingRename = i;
                 }
                 string renamedTo = null;
                 int index;
@@ -302,7 +307,22 @@ namespace GitImporter
                                 if (renamedTo == null)
                                 {
                                     renamedTo = target;
-                                    _changeSet.Renamed.Add(new Tuple<string, string>(oldName, renamedTo));
+                                    if (conflictingRename != -1)
+                                    {
+                                        if (_changeSet.Renamed[conflictingRename].Item1 != renamedTo)
+                                            // then simply do this rename before
+                                            _changeSet.Renamed.Insert(conflictingRename, new Tuple<string, string>(oldName, renamedTo));
+                                        else
+                                        {
+                                            // somebedy was perverse enough to exchange the names !
+                                            var tmpName = oldName + "." + Guid.NewGuid();
+                                            _changeSet.Renamed[conflictingRename] = new Tuple<string, string>(renamedTo, tmpName);
+                                            _changeSet.Renamed.Add(new Tuple<string, string>(oldName, renamedTo));
+                                            _changeSet.Renamed.Add(new Tuple<string, string>(tmpName, oldName));
+                                        }
+                                    }
+                                    else
+                                        _changeSet.Renamed.Add(new Tuple<string, string>(oldName, renamedTo));
                                 }
                                 else
                                     _changeSet.Copied.Add(new Tuple<string, string>(renamedTo, target));
