@@ -59,6 +59,7 @@ namespace GitImporter
             var allElementBranches = new HashSet<string>();
             if (newVersions != null)
             {
+                var allNewVersions = new HashSet<ElementVersion>(newVersions);
                 foreach (var version in newVersions)
                 {
                     allElementBranches.Add(version.Branch.FullName);
@@ -68,7 +69,7 @@ namespace GitImporter
                         branchChangeSets = new Dictionary<string, List<ChangeSet>>();
                         _changeSets.Add(version.Branch.BranchName, branchChangeSets);
                     }
-                    ProcessVersion(version, branchChangeSets);
+                    ProcessVersion(version, branchChangeSets, allNewVersions);
                 }
             }
             else
@@ -84,7 +85,7 @@ namespace GitImporter
                             _changeSets.Add(branch.BranchName, branchChangeSets);
                         }
                         foreach (var version in branch.Versions)
-                            ProcessVersion(version, branchChangeSets);
+                            ProcessVersion(version, branchChangeSets, null);
                     }
             }
 
@@ -92,24 +93,28 @@ namespace GitImporter
             return allElementBranches;
         }
 
-        private void ProcessVersion(ElementVersion version, Dictionary<string, List<ChangeSet>> branchChangeSets)
+        private void ProcessVersion(ElementVersion version, Dictionary<string, List<ChangeSet>> branchChangeSets, HashSet<ElementVersion> newVersions)
         {
             // we don't really handle versions 0 on branches : always consider BranchingPoint
             ElementVersion versionForLabel = version;
             while (versionForLabel.VersionNumber == 0 && versionForLabel.Branch.BranchingPoint != null)
                 versionForLabel = versionForLabel.Branch.BranchingPoint;
-            foreach (var label in version.Labels)
+            // don't "move" the label on versions that won't be processed (we need to assume these are correct)
+            if (newVersions == null || newVersions.Contains(versionForLabel))
             {
-                LabelInfo labelInfo;
-                if (!Labels.TryGetValue(label, out labelInfo))
+                foreach (var label in version.Labels)
                 {
-                    labelInfo = new LabelInfo(label);
-                    Labels.Add(label, labelInfo);
+                    LabelInfo labelInfo;
+                    if (!Labels.TryGetValue(label, out labelInfo))
+                    {
+                        labelInfo = new LabelInfo(label);
+                        Labels.Add(label, labelInfo);
+                    }
+                    labelInfo.Versions.Add(versionForLabel);
+                    // also actually "move" the label
+                    if (versionForLabel != version)
+                        versionForLabel.Labels.Add(label);
                 }
-                labelInfo.Versions.Add(versionForLabel);
-                // also actually "move" the label
-                if (versionForLabel != version)
-                    versionForLabel.Labels.Add(label);
             }
             // end of label move
             if (versionForLabel != version)
