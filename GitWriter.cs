@@ -43,7 +43,7 @@ namespace GitImporter
         private readonly bool _doNotIncludeFileContent;
         private bool _initialFilesAdded;
         private bool _isIncremental;
-        private HashSet<string> _startedBranches = new HashSet<string>();
+        private readonly HashSet<string> _startedBranches = new HashSet<string>();
 
         public List<Tuple<string, string>> InitialFiles { get; private set; }
 

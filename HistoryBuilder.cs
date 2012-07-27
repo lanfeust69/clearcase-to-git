@@ -109,6 +109,9 @@ namespace GitImporter
 
             // same content than _flattenChangeSets, but not necessarily same order
             var orderedChangeSets = new List<ChangeSet>(_flattenChangeSets.Count);
+            // in case of incremental import, we no longer have the Id corresponding to the index in orderedChangeSets
+            // add 1 because of 1-based ids for git marks
+            int startingId = _lastId + 1;
 
             // branch and version for which the elementName could not be found
             var orphanedVersionsByElement = new Dictionary<Element, List<Tuple<string, ChangeSet.NamedVersion>>>();
@@ -133,7 +136,7 @@ namespace GitImporter
                 }
 
                 _lastId++;
-                // n is 1-based index because it is used as a mark id for git fast-import, that reserves id 0
+                // Id is 1-based index because it is used as a mark id for git fast-import, that reserves id 0
                 changeSet.Id = _lastId;
                 orderedChangeSets.Add(changeSet);
                 Logger.TraceData(TraceEventType.Start | TraceEventType.Verbose, (int)TraceId.CreateChangeSet, "Start process element names in ChangeSet", changeSet);
@@ -214,7 +217,7 @@ namespace GitImporter
             // we may need to reorder a little bit in case of merges where the "To" is before the "From"
             var result = new List<ChangeSet>(orderedChangeSets.Count);
             for (int i = 0; i < orderedChangeSets.Count; i++)
-                AddChangeSet(orderedChangeSets, result, i);
+                AddChangeSet(orderedChangeSets, result, i, startingId);
 
             Logger.TraceData(TraceEventType.Stop | TraceEventType.Information, (int)TraceId.CreateChangeSet, "Stop process element names");
 
@@ -581,23 +584,23 @@ namespace GitImporter
                 !toVersion.MergesFrom.Any(v => v.Branch == fromVersion.Branch && v.VersionNumber > fromVersion.VersionNumber);
         }
 
-        private static void AddChangeSet(List<ChangeSet> source, List<ChangeSet> destination, int sourceIndex)
+        private static void AddChangeSet(List<ChangeSet> source, List<ChangeSet> destination, int sourceIndex, int startingId)
         {
             var changeSet = source[sourceIndex];
             if (changeSet == null)
                 return;
 
             // add missing changeSets on other branches needed to have all merges available
-            foreach (var fromChangeSet in changeSet.Merges.Where(c => c.Id > changeSet.Id && source[c.Id - 1] != null))
+            foreach (var fromChangeSet in changeSet.Merges.Where(c => c.Id > changeSet.Id && source[c.Id - startingId] != null))
             {
                 Logger.TraceData(TraceEventType.Information, (int)TraceId.CreateChangeSet,
                     "Reordering : ChangeSet " + fromChangeSet + "  must be imported before " + changeSet);
-                if (fromChangeSet != source[fromChangeSet.Id - 1])
+                if (fromChangeSet != source[fromChangeSet.Id - startingId])
                     throw new Exception("Inconsistent Id for " + fromChangeSet +
-                        " : changeSet at corresponding index was " + (source[fromChangeSet.Id - 1] == null ? "null" : source[fromChangeSet.Id - 1].ToString()));
-                for (int i = sourceIndex + 1; i < fromChangeSet.Id; i++)
+                        " : changeSet at corresponding index was " + (source[fromChangeSet.Id - startingId] == null ? "null" : source[fromChangeSet.Id - startingId].ToString()));
+                for (int i = sourceIndex + 1; i <= fromChangeSet.Id - startingId; i++)
                     if (source[i] != null && source[i].Branch == fromChangeSet.Branch)
-                        AddChangeSet(source, destination, i);
+                        AddChangeSet(source, destination, i, startingId);
             }
             
             destination.Add(changeSet);
