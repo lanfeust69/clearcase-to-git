@@ -205,10 +205,9 @@ namespace GitImporter
             foreach (var branch in allElementBranches)
             {
                 var path = branch.Split('\\');
-                if (path.Length <= 1)
-                    continue;
-
-                allPotentialParents.AddToCollection(path[path.Length - 1], path[path.Length - 2]);
+                // add all hierarchy to account for incremental import, where we may have a version on a branch, but none on its parent
+                for (int i = 1; i < path.Length; i++)
+                    allPotentialParents.AddToCollection(path[i], path[i - 1]);
             }
             var depths = allPotentialParents.Keys.ToDictionary(s => s, unused => 0);
             depths["main"] = 1;
