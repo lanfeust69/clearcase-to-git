@@ -59,8 +59,7 @@ namespace GitImporter
 
             if (_doNotIncludeFileContent)
                 return;
-            _cleartool = new Cleartool();
-            _cleartool.Cd(clearcaseRoot);
+            _cleartool = new Cleartool(clearcaseRoot);
         }
 
         public void WriteChangeSets(IList<ChangeSet> changeSets)
@@ -171,14 +170,14 @@ namespace GitImporter
                         else
                         {
                             // don't use InlineString here, so that /FetchFileContent is easy to implement
-                            _writer.Write("M 644 inline " + name + "\ndata <<EOF\n" + namedVersion.Version + "\nEOF\n\n");
+                            _writer.Write("M 644 inline " + name + "\ndata <<EOF\n" + namedVersion.Version + "#" + namedVersion.Version.Element.Oid + "\nEOF\n\n");
                             // also include name in a comment for hooks in /FetchFileContent
                             _writer.Write("#" + name + "\n");
                         }
                     continue;
                 }
 
-                InlineClearcaseFileVersion(namedVersion.Version.ToString(), namedVersion.Names, true);
+                InlineClearcaseFileVersion(namedVersion.Version.Element.Name, namedVersion.Version.Element.Oid, namedVersion.Version.VersionPath, namedVersion.Names, true);
             }
 
             foreach (var label in changeSet.Labels)
@@ -199,19 +198,35 @@ namespace GitImporter
             _writer.Write("\n");
         }
 
-        private void InlineClearcaseFileVersion(string version, IEnumerable<string> names, bool writeNames)
+        private void InlineClearcaseFileVersion(string elementPath, string elementOid, string version, IEnumerable<string> names, bool writeNames)
         {
-            string fileName = _cleartool.Get(version);
+            string fullName = elementPath + "@@" + version;
+            string fileName = _cleartool.Get(fullName);
             var fileInfo = new FileInfo(fileName);
             if (!fileInfo.Exists)
             {
-                Logger.TraceData(TraceEventType.Warning, (int)TraceId.ApplyChangeSet, "Version " + version + " could not be read from clearcase");
+                // in incremental import, elements may have been moved, without a new version, we try to use the oid
+                // (we don't always do that to avoid unecessary calls to cleartool)
+                string newElementName = _cleartool.GetElement(elementOid);
+                if (!string.IsNullOrEmpty(newElementName))
+                {
+                    // GetElement returns a "real" element name, ie ending with "@@"
+                    fullName = newElementName + version;
+                    fileName = _cleartool.Get(fullName);
+                    fileInfo = new FileInfo(fileName);
+                }
+                else
+                    Logger.TraceData(TraceEventType.Warning, (int)TraceId.ApplyChangeSet, "Element with oid " + elementOid + " could not be found in clearcase");
+            }
+            if (!fileInfo.Exists)
+            {
+                Logger.TraceData(TraceEventType.Warning, (int)TraceId.ApplyChangeSet, "Version " + fullName + " could not be read from clearcase");
                 // still create a file for later delete or rename
                 foreach (string name in names)
                 {
                     if (writeNames)
                         _writer.Write("M 644 inline " + name + "\n");
-                    InlineString("// clearcase error while retrieving " + version);
+                    InlineString("// clearcase error while retrieving " + fullName);
                 }
                 return;
             }
@@ -274,6 +289,8 @@ namespace GitImporter
                         continue;
                     // we just matched the whole "data <<EOF\n" line : next line is the version we should fetch
                     string versionToFetch = s.ReadLine();
+                    if (string.IsNullOrEmpty(versionToFetch))
+                        throw new Exception("Error line " + lineNb + " : expecting version path, reading empty line");
                     string eof = s.ReadLine();
                     if (eof != "EOF")
                         throw new Exception("Error line " + lineNb + " : expecting 'EOF', reading '" + eof + "'");
@@ -284,7 +301,18 @@ namespace GitImporter
                     if (name == null || !name.StartsWith("#"))
                         throw new Exception("Error line " + lineNb + " : expecting comment with file name, reading '" + name + "'");
                     lineNb += 5;
-                    InlineClearcaseFileVersion(versionToFetch, new[] { name.Substring(1) }, false);
+                    string elementOid = null;
+                    var parts = versionToFetch.Split('#');
+                    // backward compatibility : do not require oid
+                    if (parts.Length == 2)
+                    {
+                        versionToFetch = parts[0];
+                        elementOid = parts[1];
+                    }
+                    int pos = versionToFetch.LastIndexOf("@@");
+                    string elementPath = versionToFetch.Substring(0, pos);
+                    string versionPath = versionToFetch.Substring(pos + 2);
+                    InlineClearcaseFileVersion(elementPath, elementOid, versionPath, new[] { name.Substring(1) }, false);
                     currentLine.Clear();
                     index = 0;
                 }

@@ -14,17 +14,18 @@ namespace GitImporter
         private static readonly Regex _isFullVersionRegex = new Regex(@"\\\d+$");
         private static readonly Regex _versionRegex = new Regex(@"(.*)\@\@(\\main(\\[\w\.]+)*\\\d+)$");
 
-        private readonly Cleartool _cleartool = new Cleartool();
+        private readonly Cleartool _cleartool;
         private readonly DateTime _originDate;
 
         public Dictionary<string, Element> ElementsByOid { get; private set; }
+        private HashSet<string> _oidsToCheck = new HashSet<string>();
 
         private readonly List<Tuple<DirectoryVersion, string, string>> _contentFixups = new List<Tuple<DirectoryVersion, string, string>>();
         private readonly List<Tuple<ElementVersion, string, int, bool>> _mergeFixups = new List<Tuple<ElementVersion, string, int, bool>>();
 
         public CleartoolReader(string clearcaseRoot, string originDate)
         {
-            _cleartool.Cd(clearcaseRoot);
+            _cleartool = new Cleartool(clearcaseRoot);
             _originDate = string.IsNullOrEmpty(originDate) ? DateTime.UtcNow : DateTime.Parse(originDate).ToUniversalTime();
         }
 
@@ -48,6 +49,8 @@ namespace GitImporter
                 }
                 element.Oid = oid;
                 ElementsByOid[oid] = element;
+                // these elements come from a non-filtered clearcase export : there may be unwanted elements
+                _oidsToCheck.Add(oid);
             }
             Logger.TraceData(TraceEventType.Stop | TraceEventType.Information, (int)TraceId.ReadCleartool, "Stop fetching oids of exported elements");
         }
@@ -107,6 +110,10 @@ namespace GitImporter
                 Logger.TraceData(TraceEventType.Stop | TraceEventType.Information, (int)TraceId.ReadCleartool, "Stop reading individual versions", versionsFile);
             }
 
+            // oids still in _oidsToCheck are not to be really imported
+            foreach (var oid in _oidsToCheck)
+                ElementsByOid.Remove(oid);
+
             Logger.TraceData(TraceEventType.Start | TraceEventType.Information, (int)TraceId.ReadCleartool, "Start fixups");
             foreach (var fixup in _contentFixups)
             {
@@ -145,6 +152,7 @@ namespace GitImporter
                 Logger.TraceData(TraceEventType.Warning, (int)TraceId.ReadCleartool, "Could not find oid for element " + elementName);
                 return;
             }
+            _oidsToCheck.Remove(oid);
             if (ElementsByOid.ContainsKey(oid))
                 return;
 
@@ -257,6 +265,7 @@ namespace GitImporter
                 Logger.TraceData(TraceEventType.Warning, (int)TraceId.ReadCleartool, "Could not find oid for element " + elementName);
                 return;
             }
+            _oidsToCheck.Remove(oid);
             Element element;
             if (!ElementsByOid.TryGetValue(oid, out element))
             {

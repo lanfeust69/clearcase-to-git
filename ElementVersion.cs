@@ -49,6 +49,8 @@ namespace GitImporter
         [ProtoMember(6, AsReference = true)]
         public List<string> Labels { get; private set; }
 
+        public string VersionPath { get { return "\\" + Branch.FullName + "\\" + VersionNumber; } } 
+
         public ElementVersion(ElementBranch branch, int versionNumber)
         {
             Branch = branch;
@@ -82,7 +84,7 @@ namespace GitImporter
 
         public override string ToString()
         {
-            return Element.Name + "@@\\" + Branch.FullName + "\\" + VersionNumber;
+            return Element.Name + "@@" + VersionPath;
         }
 
         [ProtoMember(7)] private List<Reference> _rawMergesFrom;

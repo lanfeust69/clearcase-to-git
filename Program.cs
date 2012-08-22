@@ -110,11 +110,11 @@ namespace GitImporter
                         historyBuilder.Fixup(vobDB);
                     }
                     if (historyBuilder == null)
-                    {
                         historyBuilder = new HistoryBuilder(vobDB);
-                        historyBuilder.SetRoots(importerArguments.Roots);
-                        historyBuilder.SetBranchFilters(importerArguments.Branches);
-                    }
+
+                    // command-line arguments take precedence
+                    historyBuilder.SetRoots(importerArguments.Roots);
+                    historyBuilder.SetBranchFilters(importerArguments.Branches);
 
                     var changeSets = historyBuilder.Build(newVersions);
 

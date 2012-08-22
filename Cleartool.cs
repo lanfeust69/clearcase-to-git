@@ -18,6 +18,7 @@ namespace GitImporter
         private readonly Thread _outputThread;
         private readonly Thread _errorThread;
         private readonly ManualResetEventSlim _cleartoolAvailable = new ManualResetEventSlim();
+        private readonly string _clearcaseRoot;
 
         private readonly Regex _directoryEntryRegex = new Regex("^===> name: \"([^\"]+)\"");
         private readonly Regex _oidRegex = new Regex(@"cataloged oid: (\S+) \(mtype \d+\)");
@@ -30,7 +31,7 @@ namespace GitImporter
         private string _lastError;
         private const int _nbRetry = 5;
 
-        public Cleartool()
+        public Cleartool(string clearcaseRoot)
         {
             var startInfo = new ProcessStartInfo(_cleartool)
                             { UseShellExecute = false, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true };
@@ -41,6 +42,8 @@ namespace GitImporter
             _errorThread = new Thread(ReadError) { IsBackground = true };
             _errorThread.Start();
             _cleartoolAvailable.Wait();
+            _clearcaseRoot = clearcaseRoot;
+            ExecuteCommand("cd \"" + _clearcaseRoot + "\"");
         }
 
         void ReadOutput()
@@ -121,16 +124,6 @@ namespace GitImporter
             }
             Logger.TraceData(TraceEventType.Error, (int)TraceId.Cleartool, "Cleartool command failed " + _nbRetry + " times, aborting", cmd);
             return new List<string>();
-        }
-
-        public void Cd(string dir)
-        {
-            ExecuteCommand("cd \"" + dir + "\"");
-        }
-
-        public string Pwd()
-        {
-            return ExecuteCommand("pwd")[0];
         }
 
         public List<string> Lsvtree(string element)
@@ -236,6 +229,18 @@ namespace GitImporter
             string tmp = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
             ExecuteCommand("get -to \"" + tmp + "\" \"" + element + "\"");
             return tmp;
+        }
+
+        public string GetElement(string oid)
+        {
+            string fullPath = ExecuteCommand("desc -s oid:" + oid).FirstOrDefault();
+            if (string.IsNullOrEmpty(fullPath))
+                return null;
+            // try to normalize to _clearcaseRoot, it depends if we are using a dynamic or snapshot view
+            string toRemove = _clearcaseRoot + "\\";
+            while (!fullPath.StartsWith(toRemove))
+                toRemove = toRemove.Substring(toRemove.IndexOf('\\') + 1);
+            return fullPath.Substring(toRemove.Length);
         }
 
         public void Dispose()
