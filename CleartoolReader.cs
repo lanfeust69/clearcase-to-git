@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 
 namespace GitImporter
 {
@@ -14,18 +15,22 @@ namespace GitImporter
         private static readonly Regex _isFullVersionRegex = new Regex(@"\\\d+$");
         private static readonly Regex _versionRegex = new Regex(@"(.*)\@\@(\\main(\\[\w\.]+)*\\\d+)$");
 
-        private readonly Cleartool _cleartool;
+        private const int _nbCleartool = 10;
+        private readonly Cleartool[] _cleartools;
         private readonly DateTime _originDate;
 
         public Dictionary<string, Element> ElementsByOid { get; private set; }
-        private HashSet<string> _oidsToCheck = new HashSet<string>();
+        private readonly HashSet<string> _oidsToCheck = new HashSet<string>();
 
         private readonly List<Tuple<DirectoryVersion, string, string>> _contentFixups = new List<Tuple<DirectoryVersion, string, string>>();
         private readonly List<Tuple<ElementVersion, string, int, bool>> _mergeFixups = new List<Tuple<ElementVersion, string, int, bool>>();
 
         public CleartoolReader(string clearcaseRoot, string originDate)
         {
-            _cleartool = new Cleartool(clearcaseRoot);
+            _cleartools = new Cleartool[_nbCleartool];
+            for (int i = 0; i < _nbCleartool; i++)
+                _cleartools[i] = new Cleartool(clearcaseRoot);
+
             _originDate = string.IsNullOrEmpty(originDate) ? DateTime.UtcNow : DateTime.Parse(originDate).ToUniversalTime();
         }
 
@@ -37,21 +42,32 @@ namespace GitImporter
 
             Logger.TraceData(TraceEventType.Start | TraceEventType.Information, (int)TraceId.ReadCleartool, "Start fetching oids of exported elements");
             int i = 0;
+            var allActions = new List<Action>();
             foreach (var element in elements)
             {
-                if (++i % 500 == 0)
-                    Logger.TraceData(TraceEventType.Information, (int)TraceId.ReadCleartool, "Fetching oid for element " + i);
-                string oid = _cleartool.GetOid(element.Name);
-                if (string.IsNullOrEmpty(oid))
-                {
-                    Logger.TraceData(TraceEventType.Warning, (int)TraceId.ReadCleartool, "Could not find oid for element " + element.Name);
-                    continue;
-                }
-                element.Oid = oid;
-                ElementsByOid[oid] = element;
-                // these elements come from a non-filtered clearcase export : there may be unwanted elements
-                _oidsToCheck.Add(oid);
+                int iTask = ++i;
+                Element currentElement = element;
+                allActions.Add(() =>
+                    {
+                        if (iTask % 500 == 0)
+                            Logger.TraceData(TraceEventType.Information, (int)TraceId.ReadCleartool, "Fetching oid for element " + iTask);
+                        string oid;
+                        lock (_cleartools[iTask % _nbCleartool])
+                            oid = _cleartools[iTask % _nbCleartool].GetOid(currentElement.Name);
+                        if (string.IsNullOrEmpty(oid))
+                        {
+                            Logger.TraceData(TraceEventType.Warning, (int)TraceId.ReadCleartool, "Could not find oid for element " + currentElement.Name);
+                            return;
+                        }
+                        currentElement.Oid = oid;
+                        lock (ElementsByOid)
+                            ElementsByOid[oid] = currentElement;
+                        // these elements come from a non-filtered clearcase export : there may be unwanted elements
+                        lock (_oidsToCheck)
+                            _oidsToCheck.Add(oid);
+                    });
             }
+            Parallel.Invoke(new ParallelOptions { MaxDegreeOfParallelism = _nbCleartool * 2 }, allActions.ToArray());
             Logger.TraceData(TraceEventType.Stop | TraceEventType.Information, (int)TraceId.ReadCleartool, "Stop fetching oids of exported elements");
         }
 
@@ -61,34 +77,48 @@ namespace GitImporter
             if (!string.IsNullOrWhiteSpace(elementsFile))
             {
                 Logger.TraceData(TraceEventType.Start | TraceEventType.Information, (int)TraceId.ReadCleartool, "Start reading file elements", elementsFile);
+                var allActions = new List<Action>();
                 using (var files = new StreamReader(elementsFile))
                 {
                     string line;
                     int i = 0;
                     while ((line = files.ReadLine()) != null)
                     {
-                        if (++i % 100 == 0)
-                            Logger.TraceData(TraceEventType.Information, (int)TraceId.ReadCleartool, "Reading file element " + i);
-                        ReadElement(line, false);
+                        int iTask = ++i;
+                        string currentLine = line;
+                        allActions.Add(() =>
+                            {
+                                if (iTask % 100 == 0)
+                                    Logger.TraceData(TraceEventType.Information, (int)TraceId.ReadCleartool, "Reading file element " + iTask);
+                                ReadElement(currentLine, false, _cleartools[iTask % _nbCleartool]);
+                            });
                     }
                 }
+                Parallel.Invoke(new ParallelOptions { MaxDegreeOfParallelism = _nbCleartool * 2 }, allActions.ToArray());
                 Logger.TraceData(TraceEventType.Stop | TraceEventType.Information, (int)TraceId.ReadCleartool, "Stop reading file elements", elementsFile);
             }
 
             if (!string.IsNullOrWhiteSpace(directoriesFile))
             {
                 Logger.TraceData(TraceEventType.Start | TraceEventType.Information, (int)TraceId.ReadCleartool, "Start reading directory elements", directoriesFile);
+                var allActions = new List<Action>();
                 using (var directories = new StreamReader(directoriesFile))
                 {
                     string line;
                     int i = 0;
                     while ((line = directories.ReadLine()) != null)
                     {
-                        if (++i % 20 == 0)
-                            Logger.TraceData(TraceEventType.Information, (int)TraceId.ReadCleartool, "Reading directory element " + i);
-                        ReadElement(line, true);
+                        int iTask = ++i;
+                        string currentLine = line;
+                        allActions.Add(() =>
+                            {
+                                if (iTask % 20 == 0)
+                                    Logger.TraceData(TraceEventType.Information, (int)TraceId.ReadCleartool, "Reading directory element " + iTask);
+                                ReadElement(currentLine, true, _cleartools[iTask % _nbCleartool]);
+                            });
                     }
                 }
+                Parallel.Invoke(new ParallelOptions { MaxDegreeOfParallelism = _nbCleartool * 2 }, allActions.ToArray());
                 Logger.TraceData(TraceEventType.Stop | TraceEventType.Information, (int)TraceId.ReadCleartool, "Stop reading directory elements", directoriesFile);
             }
 
@@ -100,11 +130,12 @@ namespace GitImporter
                 {
                     string line;
                     int i = 0;
+                    // not parallel because not as useful, and trickier to handle versions in "random" order
                     while ((line = versions.ReadLine()) != null)
                     {
                         if (++i % 100 == 0)
                             Logger.TraceData(TraceEventType.Information, (int)TraceId.ReadCleartool, "Reading version " + i);
-                        ReadVersion(line, result);
+                        ReadVersion(line, result, _cleartools[i % _nbCleartool]);
                     }
                 }
                 Logger.TraceData(TraceEventType.Stop | TraceEventType.Information, (int)TraceId.ReadCleartool, "Stop reading individual versions", versionsFile);
@@ -141,26 +172,34 @@ namespace GitImporter
             return result;
         }
 
-        private void ReadElement(string elementName, bool isDir)
+        private void ReadElement(string elementName, bool isDir, Cleartool cleartool)
         {
             // canonical name of elements is without the trailing '@@'
             if (elementName.EndsWith("@@"))
                 elementName = elementName.Substring(0, elementName.Length - 2);
-            string oid = _cleartool.GetOid(elementName);
+            string oid;
+            lock (cleartool)
+                oid = cleartool.GetOid(elementName);
             if (string.IsNullOrEmpty(oid))
             {
                 Logger.TraceData(TraceEventType.Warning, (int)TraceId.ReadCleartool, "Could not find oid for element " + elementName);
                 return;
             }
-            _oidsToCheck.Remove(oid);
-            if (ElementsByOid.ContainsKey(oid))
-                return;
+            lock (_oidsToCheck)
+                _oidsToCheck.Remove(oid);
+            lock (ElementsByOid)
+                if (ElementsByOid.ContainsKey(oid))
+                    return;
 
             Logger.TraceData(TraceEventType.Start | TraceEventType.Verbose, (int)TraceId.ReadCleartool,
                 "Start reading " + (isDir ? "directory" : "file") + " element", elementName);
             var element = new Element(elementName, isDir) { Oid = oid };
-            ElementsByOid[oid] = element;
-            foreach (string versionString in _cleartool.Lsvtree(elementName))
+            lock (ElementsByOid)
+                ElementsByOid[oid] = element;
+            List<string> versionStrings;
+            lock (cleartool)
+                versionStrings = cleartool.Lsvtree(elementName);
+            foreach (string versionString in versionStrings)
             {
                 // there is a first "version" for each branch, without a version number
                 if (!_isFullVersionRegex.IsMatch(versionString))
@@ -179,7 +218,7 @@ namespace GitImporter
                     branch = new ElementBranch(element, branchName, branchingPoint);
                     element.Branches[branchName] = branch;
                 }
-                bool added = AddVersionToBranch(branch, versionNumber, isDir, null);
+                bool added = AddVersionToBranch(branch, versionNumber, isDir, null, cleartool);
                 if (!added)
                 {
                     // versions was too recent
@@ -193,47 +232,54 @@ namespace GitImporter
             Logger.TraceData(TraceEventType.Stop | TraceEventType.Verbose, (int)TraceId.ReadCleartool, "Stop reading element", elementName);
         }
 
-        private bool AddVersionToBranch(ElementBranch branch, int versionNumber, bool isDir, List<ElementVersion> newVersions)
+        private bool AddVersionToBranch(ElementBranch branch, int versionNumber, bool isDir, List<ElementVersion> newVersions, Cleartool cleartool)
         {
             ElementVersion version;
             if (isDir)
             {
                 var dirVersion = new DirectoryVersion(branch, versionNumber);
-                var res = _cleartool.Ls(dirVersion.ToString());
+                Dictionary<string, string> res;
+                lock (cleartool)
+                    res = cleartool.Ls(dirVersion.ToString());
                 foreach (var child in res)
-                {
-                    Element childElement;
-                    if (ElementsByOid.TryGetValue(child.Value, out childElement))
-                        dirVersion.Content.Add(new KeyValuePair<string, Element>(child.Key, childElement));
-                    else if (child.Value.StartsWith(SymLinkElement.SYMLINK))
+                    lock (ElementsByOid)
                     {
-                        Element symLink = new SymLinkElement(branch.Element, child.Value);
-                        Element existing;
-                        if (ElementsByOid.TryGetValue(symLink.Oid, out existing))
-                            symLink = existing;
+                        Element childElement;
+                        if (ElementsByOid.TryGetValue(child.Value, out childElement))
+                            dirVersion.Content.Add(new KeyValuePair<string, Element>(child.Key, childElement));
+                        else if (child.Value.StartsWith(SymLinkElement.SYMLINK))
+                        {
+                            Element symLink = new SymLinkElement(branch.Element, child.Value);
+                            Element existing;
+                            if (ElementsByOid.TryGetValue(symLink.Oid, out existing))
+                                symLink = existing;
+                            else
+                                ElementsByOid.Add(symLink.Oid, symLink);
+                            dirVersion.Content.Add(new KeyValuePair<string, Element>(child.Key, symLink));
+                        }
                         else
-                            ElementsByOid.Add(symLink.Oid, symLink);
-                        dirVersion.Content.Add(new KeyValuePair<string, Element>(child.Key, symLink));
+                            _contentFixups.Add(new Tuple<DirectoryVersion, string, string>(dirVersion, child.Key, child.Value));
                     }
-                    else
-                        _contentFixups.Add(new Tuple<DirectoryVersion, string, string>(dirVersion, child.Key, child.Value));
-                }
+
                 version = dirVersion;
             }
             else
                 version = new ElementVersion(branch, versionNumber);
             List<Tuple<string, int>> mergesTo, mergesFrom;
-            _cleartool.GetVersionDetails(version, out mergesTo, out mergesFrom);
+            lock (cleartool)
+                cleartool.GetVersionDetails(version, out mergesTo, out mergesFrom);
             if (mergesTo != null)
                 foreach (var merge in mergesTo)
                     // only merges between branches are interesting
                     if (merge.Item1 != branch.BranchName)
-                        _mergeFixups.Add(new Tuple<ElementVersion, string, int, bool>(version, merge.Item1, merge.Item2, true));
+                        lock (_mergeFixups)
+                            _mergeFixups.Add(new Tuple<ElementVersion, string, int, bool>(version, merge.Item1, merge.Item2, true));
             if (mergesFrom != null)
                 foreach (var merge in mergesFrom)
                     // only merges between branches are interesting
                     if (merge.Item1 != branch.BranchName)
-                        _mergeFixups.Add(new Tuple<ElementVersion, string, int, bool>(version, merge.Item1, merge.Item2, false));
+                        lock (_mergeFixups)
+                            _mergeFixups.Add(new Tuple<ElementVersion, string, int, bool>(version, merge.Item1, merge.Item2, false));
 
             if (version.Date > _originDate)
             {
@@ -248,7 +294,7 @@ namespace GitImporter
             return true;
         }
 
-        private void ReadVersion(string version, List<ElementVersion> newVersions)
+        private void ReadVersion(string version, List<ElementVersion> newVersions, Cleartool cleartool)
         {
             Match match = _versionRegex.Match(version);
             if (!match.Success)
@@ -259,26 +305,30 @@ namespace GitImporter
 
             string elementName = match.Groups[1].Value;
             bool isDir;
-            string oid = _cleartool.GetOid(elementName, out isDir);
+            string oid;
+            lock (cleartool)
+                oid = cleartool.GetOid(elementName, out isDir);
             if (string.IsNullOrEmpty(oid))
             {
                 Logger.TraceData(TraceEventType.Warning, (int)TraceId.ReadCleartool, "Could not find oid for element " + elementName);
                 return;
             }
-            _oidsToCheck.Remove(oid);
+            lock (_oidsToCheck)
+                _oidsToCheck.Remove(oid);
             Element element;
-            if (!ElementsByOid.TryGetValue(oid, out element))
-            {
-                element = new Element(elementName, isDir) { Oid = oid };
-                ElementsByOid.Add(oid, element);
-            }
-            else if (element.Name != elementName)
-            {
-                // the element is now seen with a different name in the currently used view
-                Logger.TraceData(TraceEventType.Information, (int)TraceId.ReadCleartool,
-                    string.Format("element with oid {0} has a different name : now using {1} instead of {2}", oid, elementName, element.Name));
-                element.Name = elementName;
-            }
+            lock (ElementsByOid)
+                if (!ElementsByOid.TryGetValue(oid, out element))
+                {
+                    element = new Element(elementName, isDir) { Oid = oid };
+                    ElementsByOid.Add(oid, element);
+                }
+                else if (element.Name != elementName)
+                {
+                    // the element is now seen with a different name in the currently used view
+                    Logger.TraceData(TraceEventType.Information, (int)TraceId.ReadCleartool,
+                        string.Format("element with oid {0} has a different name : now using {1} instead of {2}", oid, elementName, element.Name));
+                    element.Name = elementName;
+                }
             string[] versionPath = match.Groups[2].Value.Split(new[] { '\\' }, StringSplitOptions.RemoveEmptyEntries);
             string branchName = versionPath[versionPath.Length - 2];
             int versionNumber = int.Parse(versionPath[versionPath.Length - 1]);
@@ -290,7 +340,9 @@ namespace GitImporter
                 return;
 
             Logger.TraceData(TraceEventType.Start | TraceEventType.Verbose, (int)TraceId.ReadCleartool, "Start reading version", version);
-            string previousVersion = _cleartool.GetPredecessor(version);
+            string previousVersion;
+            lock (cleartool)
+                previousVersion = cleartool.GetPredecessor(version);
             int previousVersionNumber = -1;
             if (previousVersion == null)
             {
@@ -301,7 +353,7 @@ namespace GitImporter
             }
             else
             {
-                ReadVersion(elementName + "@@" + previousVersion, newVersions);
+                ReadVersion(elementName + "@@" + previousVersion, newVersions, cleartool);
                 string[] parts = previousVersion.Split('\\');
                 previousVersionNumber = int.Parse(parts[parts.Length - 1]);
             }
@@ -325,7 +377,7 @@ namespace GitImporter
                 element.Branches[branchName] = branch;
             }
             
-            bool added = AddVersionToBranch(branch, versionNumber, isDir, newVersions);
+            bool added = AddVersionToBranch(branch, versionNumber, isDir, newVersions, cleartool);
             if (!added && branch.Versions.Count == 0)
                 // do not leave an empty branch
                 element.Branches.Remove(branchName);
@@ -335,7 +387,8 @@ namespace GitImporter
 
         public void Dispose()
         {
-            _cleartool.Dispose();
+            foreach (var cleartool in _cleartools)
+                cleartool.Dispose();
         }
     }
 }
