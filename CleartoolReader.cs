@@ -142,8 +142,20 @@ namespace GitImporter
             }
 
             // oids still in _oidsToCheck are not to be really imported
-            foreach (var oid in _oidsToCheck)
-                ElementsByOid.Remove(oid);
+            if (_oidsToCheck.Count > 0)
+            {
+                foreach (var oid in _oidsToCheck)
+                    ElementsByOid.Remove(oid);
+                foreach (var directory in ElementsByOid.Values.Where(e => e.IsDirectory))
+                    foreach (var branch in directory.Branches.Values)
+                        foreach (DirectoryVersion directoryVersion in branch.Versions)
+                        {
+                            // use a copy to be able to remove
+                            var original = directoryVersion.Content.ToList();
+                            directoryVersion.Content.Clear();
+                            directoryVersion.Content.AddRange(original.Where(p => !_oidsToCheck.Contains(p.Value.Oid)));
+                        }
+            }
 
             Logger.TraceData(TraceEventType.Start | TraceEventType.Information, (int)TraceId.ReadCleartool, "Start fixups");
             foreach (var fixup in _contentFixups)
