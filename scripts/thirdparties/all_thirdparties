@@ -1,0 +1,5 @@
+MySingleDllThirdparty MY_SINGLE_DLL
+NormalThirdparty NORMAL_THIRDPARTY
+ThirdpartyWithAlternateNames THIRDPARTY_WITH_ALTERNATE_NAMES
+log4net
+protobuf
