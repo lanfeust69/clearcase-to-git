@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -143,16 +144,16 @@ namespace GitImporter
 
             // order is significant : we must Rename and Copy files before (maybe) deleting their directory
             foreach (var pair in changeSet.Renamed)
-                _writer.Write("R \"" + pair.Item1 + "\" \"" + pair.Item2 + "\"\n");
+                _writer.Write("R \"" + RemoveDotRoot(pair.Item1) + "\" \"" + RemoveDotRoot(pair.Item2) + "\"\n");
             foreach (var pair in changeSet.Copied)
-                _writer.Write("C \"" + pair.Item1 + "\" \"" + pair.Item2 + "\"\n");
+                _writer.Write("C \"" + RemoveDotRoot(pair.Item1) + "\" \"" + RemoveDotRoot(pair.Item2) + "\"\n");
             foreach (var removed in changeSet.Removed)
-                _writer.Write("D " + removed + "\n");
+                _writer.Write("D " + RemoveDotRoot(removed) + "\n");
 
             foreach (var symLink in changeSet.SymLinks)
             {
-                _writer.Write("M 120000 inline " + symLink.Item1 + "\n");
-                InlineString(symLink.Item2);
+                _writer.Write("M 120000 inline " + RemoveDotRoot(symLink.Item1) + "\n");
+                InlineString(RemoveDotRoot(symLink.Item2));
             }
 
             foreach (var namedVersion in changeSet.Versions)
@@ -164,7 +165,7 @@ namespace GitImporter
 
                 if (_doNotIncludeFileContent || isEmptyFile)
                 {
-                    foreach (string name in namedVersion.Names)
+                    foreach (string name in namedVersion.Names.Select(RemoveDotRoot))
                         if (isEmptyFile)
                             _writer.Write("M 644 inline " + name + "\ndata 0\n\n");
                         else
@@ -177,7 +178,7 @@ namespace GitImporter
                     continue;
                 }
 
-                InlineClearcaseFileVersion(namedVersion.Version.Element.Name, namedVersion.Version.Element.Oid, namedVersion.Version.VersionPath, namedVersion.Names, true);
+                InlineClearcaseFileVersion(namedVersion.Version.Element.Name, namedVersion.Version.Element.Oid, namedVersion.Version.VersionPath, namedVersion.Names.Select(RemoveDotRoot), true);
             }
 
             foreach (var label in changeSet.Labels)
@@ -196,6 +197,11 @@ namespace GitImporter
             _writer.Flush();
             _writer.BaseStream.Write(encoded, 0, encoded.Length);
             _writer.Write("\n");
+        }
+
+        private static string RemoveDotRoot(string path)
+        {
+            return path.StartsWith("./") ? path.Substring(2) : path;
         }
 
         private void InlineClearcaseFileVersion(string elementPath, string elementOid, string version, IEnumerable<string> names, bool writeNames)
