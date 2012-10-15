@@ -108,6 +108,7 @@ namespace GitImporter
         public void ProcessConfigSpec(string configSpec, StreamWriter writer)
         {
             string line;
+            var foundModules = new HashSet<string>();
             using (var stream = new StreamReader(configSpec))
                 while ((line = stream.ReadLine()) != null)
                 {
@@ -137,6 +138,12 @@ namespace GitImporter
                     string standardCaseModule;
                     if (!_alternateCase.TryGetValue(module, out standardCaseModule))
                         standardCaseModule = module;
+                    if (foundModules.Contains(standardCaseModule))
+                    {
+                        GitWriter.Logger.TraceData(TraceEventType.Warning, (int)TraceId.ApplyChangeSet,
+                            "module " + standardCaseModule + " has already been seen, label " + label + " won't be used");
+                        continue;
+                    }
                     if (!_thirdPartyModules.TryGetValue(standardCaseModule, out dict))
                         continue;
                     string commit;
@@ -156,6 +163,7 @@ namespace GitImporter
                         continue;
                     }
 
+                    foundModules.Add(standardCaseModule);
                     writer.Write("M 160000 " + commit + " " + _thirdpartyRoot + standardCaseModule + "\n");
                 }
         }
