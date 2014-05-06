@@ -41,7 +41,7 @@ namespace GitImporter
 
                 if (!string.IsNullOrEmpty(importerArguments.FetchFileContent))
                 {
-                    using (var gitWriter = new GitWriter(importerArguments.ClearcaseRoot, importerArguments.NoFileContent))
+                    using (var gitWriter = new GitWriter(importerArguments.ClearcaseRoot, importerArguments.NoFileContent, importerArguments.Labels))
                     {
                         if (File.Exists(importerArguments.ThirdpartyConfig))
                         {
@@ -68,7 +68,7 @@ namespace GitImporter
                     }
                 }
 
-                var exportReader = new ExportReader(importerArguments.OriginDate);
+                var exportReader = new ExportReader(importerArguments.OriginDate, importerArguments.Labels);
                 foreach (var file in importerArguments.ExportFiles)
                     exportReader.ReadFile(file);
 
@@ -77,7 +77,7 @@ namespace GitImporter
                 if (!string.IsNullOrWhiteSpace(importerArguments.DirectoriesFile) ||
                     !string.IsNullOrWhiteSpace(importerArguments.ElementsFile) ||
                     !string.IsNullOrWhiteSpace(importerArguments.VersionsFile))
-                    using (var cleartoolReader = new CleartoolReader(importerArguments.ClearcaseRoot, importerArguments.OriginDate))
+                    using (var cleartoolReader = new CleartoolReader(importerArguments.ClearcaseRoot, importerArguments.OriginDate, importerArguments.Labels))
                     {
                         cleartoolReader.Init(vobDB, exportReader.Elements);
                         // first save of exportReader with oid (if something was actually read)
@@ -127,7 +127,7 @@ namespace GitImporter
                         Logger.TraceData(TraceEventType.Information, 0, "History data successfully saved in " + importerArguments.History);
                     }
 
-                    using (var gitWriter = new GitWriter(importerArguments.ClearcaseRoot, importerArguments.NoFileContent))
+                    using (var gitWriter = new GitWriter(importerArguments.ClearcaseRoot, importerArguments.NoFileContent, importerArguments.Labels))
                     {
                         if (File.Exists(importerArguments.IgnoreFile))
                             gitWriter.InitialFiles.Add(new Tuple<string, string>(".gitignore", importerArguments.IgnoreFile));

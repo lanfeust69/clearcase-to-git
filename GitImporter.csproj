@@ -81,6 +81,7 @@
     <Compile Include="Helpers.cs" />
     <Compile Include="HistoryBuilder.cs" />
     <Compile Include="ImporterArguments.cs" />
+    <Compile Include="LabelFilter.cs" />
     <Compile Include="LabelInfo.cs" />
     <Compile Include="MergeInfo.cs" />
     <Compile Include="Program.cs" />

@@ -51,7 +51,7 @@ namespace GitImporter
         public List<PreWritingHook> PreWritingHooks { get; private set; }
         public List<PostWritingHook> PostWritingHooks { get; private set; }
 
-        public GitWriter(string clearcaseRoot, bool doNotIncludeFileContent)
+        public GitWriter(string clearcaseRoot, bool doNotIncludeFileContent, IEnumerable<string> labels)
         {
             _doNotIncludeFileContent = doNotIncludeFileContent;
             InitialFiles = new List<Tuple<string, string>>();
@@ -60,7 +60,7 @@ namespace GitImporter
 
             if (_doNotIncludeFileContent)
                 return;
-            _cleartool = new Cleartool(clearcaseRoot);
+            _cleartool = new Cleartool(clearcaseRoot, new LabelFilter(labels));
         }
 
         public void WriteChangeSets(IList<ChangeSet> changeSets)

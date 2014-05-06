@@ -25,11 +25,12 @@ namespace GitImporter
         private readonly List<Tuple<DirectoryVersion, string, string>> _contentFixups = new List<Tuple<DirectoryVersion, string, string>>();
         private readonly List<Tuple<ElementVersion, string, int, bool>> _mergeFixups = new List<Tuple<ElementVersion, string, int, bool>>();
 
-        public CleartoolReader(string clearcaseRoot, string originDate)
+        public CleartoolReader(string clearcaseRoot, string originDate, IEnumerable<string> labels)
         {
+            var labelFilter = new LabelFilter(labels);
             _cleartools = new Cleartool[_nbCleartool];
             for (int i = 0; i < _nbCleartool; i++)
-                _cleartools[i] = new Cleartool(clearcaseRoot);
+                _cleartools[i] = new Cleartool(clearcaseRoot, labelFilter);
 
             _originDate = string.IsNullOrEmpty(originDate) ? DateTime.UtcNow : DateTime.Parse(originDate).ToUniversalTime();
         }

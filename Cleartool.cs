@@ -19,6 +19,7 @@ namespace GitImporter
         private readonly Thread _errorThread;
         private readonly ManualResetEventSlim _cleartoolAvailable = new ManualResetEventSlim();
         private readonly string _clearcaseRoot;
+        private readonly LabelFilter _labelFilter;
 
         private readonly Regex _directoryEntryRegex = new Regex("^===> name: \"([^\"]+)\"");
         private readonly Regex _oidRegex = new Regex(@"cataloged oid: (\S+) \(mtype \d+\)");
@@ -29,10 +30,12 @@ namespace GitImporter
 
         private List<string> _currentOutput = new List<string>();
         private string _lastError;
-        private const int _nbRetry = 5;
+        private const int _nbRetry = 15;
 
-        public Cleartool(string clearcaseRoot)
+        public Cleartool(string clearcaseRoot, LabelFilter labelFilter)
         {
+            _labelFilter = labelFilter;
+
             var startInfo = new ProcessStartInfo(_cleartool)
                             { UseShellExecute = false, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true };
             _process = new Process { StartInfo = startInfo };
@@ -198,7 +201,7 @@ namespace GitImporter
             version.Date = DateTime.ParseExact(parts[2], "yyyyMMdd.HHmmss", null).ToUniversalTime();
             version.Comment = string.Intern(parts[3]);
             foreach (string label in parts[4].Split(' '))
-                if (!string.IsNullOrWhiteSpace(label))
+                if (!string.IsNullOrWhiteSpace(label) && _labelFilter.ShouldKeep(label))
                     version.Labels.Add(string.Intern(label));
             mergesTo = mergesFrom = null;
             if (isDir || string.IsNullOrEmpty(parts[5]))

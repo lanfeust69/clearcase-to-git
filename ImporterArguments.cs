@@ -21,6 +21,8 @@ namespace GitImporter
         public string[] Roots;
         [Argument(ArgumentType.MultipleUnique, HelpText = "Branches to import (may be a regular expression).", DefaultValue = new[] { "^PROD\\d+\\.\\d+" })]
         public string[] Branches;
+        [Argument(ArgumentType.MultipleUnique, HelpText = "Labels to import (may be a regular expression, or NONE).", DefaultValue = new[] { ".*" })]
+        public string[] Labels;
         [Argument(ArgumentType.AtMostOnce, HelpText = "Full path from which element names are specified (must be within a clearcase view).")]
         public string ClearcaseRoot;
         [Argument(ArgumentType.AtMostOnce, HelpText = "Date up to which versions will be retrieved, more recent are discarded (use to keep consistency between directory contents and elements).")]

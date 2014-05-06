@@ -12,25 +12,27 @@ namespace GitImporter
         public static TraceSource Logger = Program.Logger;
 
         private readonly DateTime _originDate;
+        private readonly LabelFilter _labelFilter;
 
         private static readonly DateTime _epoch = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
-        private readonly Regex _elementNameRegex = new Regex(@"^Name \d+:(.*)");
-        private readonly Regex _versionIdRegex = new Regex(@"^VersionId \d+:\\(.*)\\(\d+)");
-        private readonly Regex _userRegex = new Regex(@"^EventUser \d+:(.*)");
-        private readonly Regex _userNameRegex = new Regex(@"^EventName \d+:(.*)");
-        private readonly Regex _timeRegex = new Regex(@"^EventTime (\d+)");
-        private readonly Regex _commentRegex = new Regex(@"^Comment (\d+):(.*)");
-        private readonly Regex _labelRegex = new Regex(@"^Label \d+:(.*)");
-        private readonly Regex _subBranchRegex = new Regex(@"^SubBranch \d+:(.*)");
-        private readonly Regex _mergeRegex = new Regex(@"^(F)?Merge \d+:([^\\]+\\)*(\d+)");
+        private readonly Regex _elementNameRegex = new Regex(@"^Name \d+:(.*)", RegexOptions.Compiled);
+        private readonly Regex _versionIdRegex = new Regex(@"^VersionId \d+:\\(.*)\\(\d+)", RegexOptions.Compiled);
+        private readonly Regex _userRegex = new Regex(@"^EventUser \d+:(.*)", RegexOptions.Compiled);
+        private readonly Regex _userNameRegex = new Regex(@"^EventName \d+:(.*)", RegexOptions.Compiled);
+        private readonly Regex _timeRegex = new Regex(@"^EventTime (\d+)", RegexOptions.Compiled);
+        private readonly Regex _commentRegex = new Regex(@"^Comment (\d+):(.*)", RegexOptions.Compiled);
+        private readonly Regex _labelRegex = new Regex(@"^Label \d+:(.*)", RegexOptions.Compiled);
+        private readonly Regex _subBranchRegex = new Regex(@"^SubBranch \d+:(.*)", RegexOptions.Compiled);
+        private readonly Regex _mergeRegex = new Regex(@"^(F)?Merge \d+:([^\\]+\\)*(\d+)", RegexOptions.Compiled);
 
         public IList<Element> Elements { get; private set; }
 
-        public ExportReader(string originDate)
+        public ExportReader(string originDate, IEnumerable<string> labels)
         {
             Elements = new List<Element>();
             _originDate = string.IsNullOrEmpty(originDate) ? DateTime.UtcNow : DateTime.Parse(originDate).ToUniversalTime();
+            _labelFilter = new LabelFilter(labels);
         }
 
         /// <summary>
@@ -163,7 +165,9 @@ namespace GitImporter
                 }
                 if (currentVersion != null && (match = _labelRegex.Match(line)).Success)
                 {
-                    currentVersion.Labels.Add(string.Intern(match.Groups[1].Value));
+                    var label = string.Intern(match.Groups[1].Value);
+                    if (_labelFilter.ShouldKeep(label))
+                        currentVersion.Labels.Add(label);
                     continue;
                 }
                 if (currentVersion != null && (match = _commentRegex.Match(line)).Success)
