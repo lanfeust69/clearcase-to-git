@@ -78,6 +78,8 @@ namespace GitImporter
         public void SetRoots(IEnumerable<string> roots)
         {
             _roots.Clear();
+            // always need "." as root
+            _roots.Add(".");
             foreach (var root in roots)
                 _roots.Add(root);
         }
@@ -152,7 +154,36 @@ namespace GitImporter
                     if (changeSet.Branch != "main")
                     {
                         string parentBranch = _globalBranches[changeSet.Branch];
-                        // TODO : this may well be wrong !
+                        // if parentBranch not started yet, assume it starts now from its own parent
+                        string toStart;
+                        do
+                        {
+                            toStart = null;
+                            string currentParent = parentBranch;
+                            while (!_startedBranches.ContainsKey(currentParent))
+                            {
+                                toStart = currentParent;
+                                currentParent = _globalBranches[currentParent];
+                            }
+                            if (toStart != null)
+                            {
+                                // create an empty ChangeSet to start
+                                var missingBranchStartingPoint = _branchTips[currentParent];
+                                missingBranchStartingPoint.IsBranchingPoint = true;
+                                var missingBranch = new ChangeSet(missingBranchStartingPoint.AuthorName,
+                                    missingBranchStartingPoint.AuthorLogin, toStart, missingBranchStartingPoint.FinishTime);
+                                missingBranch.BranchingPoint = missingBranchStartingPoint;
+                                _elementsNamesByBranch.Add(toStart, _elementsNamesByBranch[currentParent].ToDictionary(elementNames => elementNames.Key, elementNames => new HashSet<string>(elementNames.Value)));
+                                _elementsVersionsByBranch.Add(toStart, new Dictionary<Element, ElementVersion>(_elementsVersionsByBranch[currentParent]));
+                                _startedBranches.Add(toStart, missingBranchStartingPoint);
+                                _branchTips[toStart] = missingBranchStartingPoint;
+                                missingBranch.Id = changeSet.Id;
+                                _lastId++;
+                                changeSet.Id = _lastId;
+                                orderedChangeSets.Insert(orderedChangeSets.Count - 1, missingBranch);
+                            }
+                        } while (toStart != null);
+
                         changeSet.BranchingPoint = _branchTips[parentBranch];
                         _branchTips[parentBranch].IsBranchingPoint = true;
                         // we need a deep copy here
@@ -602,7 +633,7 @@ namespace GitImporter
                     if (source[i] != null && source[i].Branch == fromChangeSet.Branch)
                         AddChangeSet(source, destination, i, startingId);
             }
-            
+
             destination.Add(changeSet);
             source[sourceIndex] = null;
         }
