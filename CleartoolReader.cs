@@ -13,7 +13,7 @@ namespace GitImporter
         public static TraceSource Logger = Program.Logger;
 
         private static readonly Regex _isFullVersionRegex = new Regex(@"\\\d+$");
-        private static readonly Regex _versionRegex = new Regex(@"(.*)\@\@(\\main(\\[\w\.]+)*\\\d+)$");
+        private static readonly Regex _versionRegex = new Regex(@"(.*)\@\@(\\main(\\[\w\.\-]+)*\\\d+)$");
 
         private const int _nbCleartool = 10;
         private readonly Cleartool[] _cleartools;
