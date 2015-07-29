@@ -279,7 +279,10 @@ namespace GitImporter
                 int index = _currentIndex;
                 string label = pair.Item1;
                 string branch = pair.Item2;
-                var labelInfo = _labels[label];
+                LabelInfo labelInfo;
+                if (!_labels.TryGetValue(label, out labelInfo))
+                    // a label could be a broken candidate on several branches, and therefore already removed
+                    continue;
                 HashSet<ElementVersion> missingVersions;
                 if (!labelInfo.MissingVersions.TryGetValue(branch, out missingVersions))
                 {
