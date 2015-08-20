@@ -150,28 +150,41 @@ namespace GitImporter
             }
         }
 
-        private static void ComputeDiffWithPrevious(DirectoryVersion version,
+        private void ComputeDiffWithPrevious(DirectoryVersion version,
             List<KeyValuePair<Element, List<Tuple<Element, string>>>> removedElements,
             List<KeyValuePair<Element, List<Tuple<Element, string>>>> addedElements)
         {
             // we never put (uninteresting) version 0 of a directory element in a changeSet,
             // but it is still in the ElementBranch.Versions
             var previousVersion = (DirectoryVersion)version.GetPreviousVersion();
-            foreach (var pair in previousVersion.Content)
+            // however, if this is indeed the branching point, then previousVersion may
+            // not correspond to what is currently in the branch, because clearcase branches
+            // are independent for different elements
+            // we don't always use _oldVersions because there may be several successive versions in a single ChangeSet
+            if (previousVersion.VersionNumber == 0)
             {
-                Element childElement = pair.Value;
-                // an element may appear under different names
-                // KeyValuePair.Equals seems to be slow
-                if (version.Content.Any(p => p.Key == pair.Key && p.Value == pair.Value))
-                    continue;
-
-                var namedInElement = new Tuple<Element, string>(version.Element, pair.Key);
-                if (!addedElements.RemoveFromCollection(childElement, namedInElement))
-                    removedElements.AddToCollection(childElement, namedInElement);
+                ElementVersion oldVersion;
+                _oldVersions.TryGetValue(version.Element, out oldVersion);
+                // if there is no oldVersion, it means the whole element has been created after
+                // the branch had been spawned, we consider version the first version (by keeping null for previousVersion)
+                previousVersion = (DirectoryVersion)oldVersion;
             }
+            if (previousVersion != null)
+                foreach (var pair in previousVersion.Content)
+                {
+                    Element childElement = pair.Value;
+                    // an element may appear under different names
+                    // KeyValuePair.Equals seems to be slow
+                    if (version.Content.Any(p => p.Key == pair.Key && p.Value == pair.Value))
+                        continue;
+
+                    var namedInElement = new Tuple<Element, string>(version.Element, pair.Key);
+                    if (!addedElements.RemoveFromCollection(childElement, namedInElement))
+                        removedElements.AddToCollection(childElement, namedInElement);
+                }
             foreach (var pair in version.Content)
             {
-                if (!previousVersion.Content.Any(p => p.Key == pair.Key && p.Value == pair.Value))
+                if (previousVersion == null || !previousVersion.Content.Any(p => p.Key == pair.Key && p.Value == pair.Value))
                     addedElements.AddToCollection(pair.Value, new Tuple<Element, string>(version.Element, pair.Key));
             }
         }
@@ -189,7 +202,10 @@ namespace GitImporter
             var removedElementsNames = new Dictionary<Element, HashSet<string>>();
             foreach (var pair in removedElements)
             {
-                if (!(pair.Key is SymLinkElement) && !_elementsVersions.ContainsKey(pair.Key))
+                ElementVersion oldVersion;
+                if (!(pair.Key is SymLinkElement) &&
+                    (!_elementsVersions.ContainsKey(pair.Key) ||
+                    (_oldVersions.TryGetValue(pair.Key, out oldVersion) && oldVersion == null)))
                 {
                     Logger.TraceData(TraceEventType.Information, (int)TraceId.CreateChangeSet,
                                      "Element " + pair.Key + " was removed (or renamed) before any actual version was committed");
@@ -361,13 +377,13 @@ namespace GitImporter
             }
             List<ChangeSet.NamedVersion> existing = _changeSet.Versions.Where(v => v.Version.Element == element).ToList();
             if (existing.Count > 1)
-                throw new Exception("Unexpected number of versions (" + existing.Count + ") of file element " + element + " in change set " + _changeSet);
+                throw new Exception("Unexpected number of versions (" + existing.Count + ") of file element " + element + " in ChangeSet " + _changeSet);
 
             string fullName = baseName == null ? null : baseName + name;
             if (existing.Count == 1)
             {
                 if (existing[0].Version != currentVersion)
-                    throw new Exception("Unexpected mismatch of versions of file element " + element + " in change set " + _changeSet + " : " + existing[0].Version + " != " + currentVersion);
+                    throw new Exception("Unexpected mismatch of versions of file element " + element + " in ChangeSet " + _changeSet + " : " + existing[0].Version + " != " + currentVersion);
                 if (fullName != null && !existing[0].Names.Contains(fullName))
                 {
                     existing[0].Names.Add(fullName);

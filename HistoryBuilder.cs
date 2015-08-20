@@ -248,7 +248,7 @@ namespace GitImporter
             // we may need to reorder a little bit in case of merges where the "To" is before the "From"
             var result = new List<ChangeSet>(orderedChangeSets.Count);
             for (int i = 0; i < orderedChangeSets.Count; i++)
-                AddChangeSet(orderedChangeSets, result, i, startingId);
+                AddChangeSet(orderedChangeSets, result, i, startingId, i);
 
             Logger.TraceData(TraceEventType.Stop | TraceEventType.Information, (int)TraceId.CreateChangeSet, "Stop process element names");
 
@@ -618,23 +618,23 @@ namespace GitImporter
                 !toVersion.MergesFrom.Any(v => v.Branch == fromVersion.Branch && v.VersionNumber > fromVersion.VersionNumber);
         }
 
-        private static void AddChangeSet(List<ChangeSet> source, List<ChangeSet> destination, int sourceIndex, int startingId)
+        private static void AddChangeSet(List<ChangeSet> source, List<ChangeSet> destination, int sourceIndex, int startingId, int firstNonNullIndex)
         {
             var changeSet = source[sourceIndex];
             if (changeSet == null)
                 return;
 
             // add missing changeSets on other branches needed to have all merges available
-            foreach (var fromChangeSet in changeSet.Merges.Where(c => c.Id > changeSet.Id && source[c.Id - startingId] != null))
+            foreach (var fromChangeSet in changeSet.Merges.Where(c => source[c.Id - startingId] != null))
             {
                 Logger.TraceData(TraceEventType.Information, (int)TraceId.CreateChangeSet,
                     "Reordering : ChangeSet " + fromChangeSet + "  must be imported before " + changeSet);
                 if (fromChangeSet != source[fromChangeSet.Id - startingId])
                     throw new Exception("Inconsistent Id for " + fromChangeSet +
                         " : changeSet at corresponding index was " + (source[fromChangeSet.Id - startingId] == null ? "null" : source[fromChangeSet.Id - startingId].ToString()));
-                for (int i = sourceIndex + 1; i <= fromChangeSet.Id - startingId; i++)
+                for (int i = firstNonNullIndex; i <= fromChangeSet.Id - startingId; i++)
                     if (source[i] != null && source[i].Branch == fromChangeSet.Branch)
-                        AddChangeSet(source, destination, i, startingId);
+                        AddChangeSet(source, destination, i, startingId, firstNonNullIndex);
             }
 
             destination.Add(changeSet);
