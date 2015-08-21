@@ -763,5 +763,37 @@ namespace GitImporter
                 _rawStartedBranches = null;
             }
         }
+
+        /// <summary>
+        /// Handles cases of branches differing only on case : git branches are implemented as
+        /// files named after the branches, so they collide on case-insensitive file systems such as windows
+        /// </summary>
+        /// <returns>A dictionary of branches needing renaming to their new name</returns>
+        public Dictionary<string, string> GetBranchRename()
+        {
+            // not perfectly clean : we use the order of the keys of a Dictionary, which happens
+            // to be reliable here (insertion order, since no remove), but is implementation-dependent
+            var caseInsensitiveNames = new HashSet<string>();
+            var result = new Dictionary<string, string>();
+            foreach (var branch in _globalBranches.Keys)
+            {
+                var caseInsensitiveName = branch.ToLowerInvariant();
+                if (!caseInsensitiveNames.Contains(caseInsensitiveName))
+                {
+                    caseInsensitiveNames.Add(caseInsensitiveName);
+                    continue;
+                }
+                int n = 0;
+                string newName;
+                do
+                {
+                    n++;
+                    newName = string.Format("{0}_{1}", branch, n);
+                } while (caseInsensitiveNames.Contains(newName.ToLowerInvariant()));
+                result.Add(branch, newName);
+                caseInsensitiveNames.Add(newName.ToLowerInvariant());
+            }
+            return result;
+        }
     }
 }

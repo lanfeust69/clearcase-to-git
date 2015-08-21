@@ -117,17 +117,9 @@ namespace GitImporter
                     historyBuilder.SetBranchFilters(importerArguments.Branches);
 
                     var changeSets = historyBuilder.Build(newVersions);
+                    var branchRename = historyBuilder.GetBranchRename();
 
-                    if (!string.IsNullOrWhiteSpace(importerArguments.History))
-                    {
-                        if (File.Exists(importerArguments.History))
-                            File.Move(importerArguments.History, importerArguments.History + ".bak");
-                        using (var stream = new FileStream(importerArguments.History, FileMode.Create))
-                            Serializer.Serialize(stream, historyBuilder);
-                        Logger.TraceData(TraceEventType.Information, 0, "History data successfully saved in " + importerArguments.History);
-                    }
-
-                    using (var gitWriter = new GitWriter(importerArguments.ClearcaseRoot, importerArguments.NoFileContent, importerArguments.Labels))
+                    using (var gitWriter = new GitWriter(importerArguments.ClearcaseRoot, importerArguments.NoFileContent, importerArguments.Labels, branchRename))
                     {
                         if (File.Exists(importerArguments.IgnoreFile))
                             gitWriter.InitialFiles.Add(new Tuple<string, string>(".gitignore", importerArguments.IgnoreFile));
@@ -140,6 +132,15 @@ namespace GitImporter
                             gitWriter.InitialFiles.Add(new Tuple<string, string>(".gitmodules", hook.ModulesFile));
                         }
                         gitWriter.WriteChangeSets(changeSets);
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(importerArguments.History))
+                    {
+                        if (File.Exists(importerArguments.History))
+                            File.Move(importerArguments.History, importerArguments.History + ".bak");
+                        using (var stream = new FileStream(importerArguments.History, FileMode.Create))
+                            Serializer.Serialize(stream, historyBuilder);
+                        Logger.TraceData(TraceEventType.Information, 0, "History data successfully saved in " + importerArguments.History);
                     }
                 }
             }

@@ -45,15 +45,18 @@ namespace GitImporter
         private bool _initialFilesAdded;
         private bool _isIncremental;
         private readonly HashSet<string> _startedBranches = new HashSet<string>();
+        private readonly Dictionary<string, string> _branchRename;
 
         public List<Tuple<string, string>> InitialFiles { get; private set; }
 
         public List<PreWritingHook> PreWritingHooks { get; private set; }
         public List<PostWritingHook> PostWritingHooks { get; private set; }
 
-        public GitWriter(string clearcaseRoot, bool doNotIncludeFileContent, IEnumerable<string> labels)
+        public GitWriter(string clearcaseRoot, bool doNotIncludeFileContent, IEnumerable<string> labels,
+            Dictionary<string, string> branchRename = null)
         {
             _doNotIncludeFileContent = doNotIncludeFileContent;
+            _branchRename = branchRename ?? new Dictionary<string, string>();
             InitialFiles = new List<Tuple<string, string>>();
             PreWritingHooks = new List<PreWritingHook>();
             PostWritingHooks = new List<PostWritingHook>();
@@ -107,7 +110,7 @@ namespace GitImporter
                 return;
             }
 
-            string branchName = changeSet.Branch == "main" ? "master" : changeSet.Branch;
+            string branchName = changeSet.Branch == "main" ? "master" : MaybeRenamed(changeSet.Branch);
             _writer.Write("commit refs/heads/" + branchName + "\n");
             _writer.Write("mark :" + changeSet.Id + "\n");
             _writer.Write("committer " + changeSet.AuthorName + " <" + changeSet.AuthorLogin + "> " + (changeSet.StartTime - _epoch).TotalSeconds + " +0200\n");
@@ -188,6 +191,13 @@ namespace GitImporter
                 _writer.Write("tagger Unknown <unknown> " + (changeSet.StartTime - _epoch).TotalSeconds + " +0200\n");
                 _writer.Write("data 0\n\n");
             }
+        }
+
+        private string MaybeRenamed(string branch)
+        {
+            string newName;
+            _branchRename.TryGetValue(branch, out newName);
+            return newName ?? branch;
         }
 
         private void InlineString(string data)
