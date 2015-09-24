@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -209,6 +210,7 @@ namespace GitImporter
                 for (int i = 1; i < path.Length; i++)
                     allPotentialParents.AddToCollection(path[i], path[i - 1]);
             }
+            RemoveCycles(allPotentialParents);
             var depths = allPotentialParents.Keys.ToDictionary(s => s, unused => 0);
             depths["main"] = 1;
             bool finished = false;
@@ -230,11 +232,75 @@ namespace GitImporter
             foreach (var pair in allPotentialParents)
             {
                 var maxDepth = pair.Value.Max(p => depths[p]);
-                var candidates = pair.Value.Where(p => depths[p] == maxDepth);
-                if (candidates.Count() != 1)
-                    throw new Exception("Could not compute parent of branch " + pair.Key + " among " + string.Join(", ", candidates));
-                GlobalBranches[pair.Key] = candidates.First();
+                var candidates = pair.Value.Where(p => depths[p] == maxDepth).ToList();
+                if (candidates.Count > 1)
+                    Logger.TraceData(TraceEventType.Warning, (int)TraceId.CreateChangeSet,
+                                     "Branch " + pair.Key + " parent is ambiguous between " + string.Join(" and ", candidates) +
+                                     ", choosing " + candidates[0]);
+                GlobalBranches[pair.Key] = candidates[0];
             }
+        }
+
+        private class CycleComparer : IEqualityComparer<List<string>>
+        {
+            public bool Equals(List<string> x, List<string> y)
+            {
+                if (x == null)
+                    return y == null;
+                for (int i = 0; i < x.Count; i++)
+                    if (x.Skip(i).Concat(x.Take(i)).SequenceEqual(y))
+                        return true;
+                return false;
+            }
+
+            public int GetHashCode(List<string> obj)
+            {
+                return obj.Aggregate(0, (i, s) => i ^ s.GetHashCode());
+            }
+        }
+
+        private void RemoveCycles(Dictionary<string, HashSet<string>> allPotentialParents)
+        {
+            var allCycles = FindAllCycles(allPotentialParents);
+            // not efficient, but having cycles is a bad (and hopefully rare) situation to begin with
+            while (allCycles.Count > 0)
+            {
+                // first find the link that would break as many cycles as possible
+                var allPairs = allCycles
+                    .SelectMany(cycle => cycle.Zip(cycle.Skip(1).Concat(new[] { cycle[0] }), Tuple.Create))
+                    .GroupBy(p => p)
+                    .Select(g => Tuple.Create(g.Key, g.Count()))
+                    .OrderByDescending(g => g.Item2).ToList();
+                var candidates = allPairs.TakeWhile(t => t.Item2 == allPairs[0].Item2).Select(p => p.Item1);
+
+                // then break at the branch with the most potential parents
+                var toBreak = candidates.OrderByDescending(p => allPotentialParents[p.Item1].Count).First();
+                Logger.TraceData(TraceEventType.Warning, (int)TraceId.CreateChangeSet,
+                    "Branch cycle(s) : " +
+                    string.Join(" ; ", allCycles.Select(cycle => string.Join(" -> ", cycle.Concat(new[] { cycle[0] })))) +
+                    ", breaking by removing " + toBreak.Item2 + " as a potential parent of " + toBreak.Item1);
+                allPotentialParents[toBreak.Item1].Remove(toBreak.Item2);
+
+                allCycles = FindAllCycles(allPotentialParents);
+            }
+        }
+
+        private HashSet<List<string>> FindAllCycles(Dictionary<string, HashSet<string>> allPotentialParents)
+        {
+            return new HashSet<List<string>>(allPotentialParents.Keys
+                .SelectMany(k => FindCycles(k, new List<string>(), allPotentialParents)),
+                new CycleComparer());
+        }
+
+        private List<List<string>> FindCycles(string toCheck, List<string> currentChain, Dictionary<string, HashSet<string>> allPotentialParents)
+        {
+            if (toCheck == "main")
+                return new List<List<string>>();
+            if (currentChain.Contains(toCheck))
+                return new List<List<string>> {new List<string>(currentChain.SkipWhile(s => s != toCheck)) };
+
+            var newChain = new List<string>(currentChain) { toCheck };
+            return allPotentialParents[toCheck].SelectMany(p => FindCycles(p, newChain, allPotentialParents)).ToList();
         }
 
         private void FilterBranches()
